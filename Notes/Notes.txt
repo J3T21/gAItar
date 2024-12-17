@@ -1,3 +1,17 @@
 Mini solenoids seem to be just about strong enough
 Need 5v for gate of current mosfets - could get 3.3V Vth https://www.mouser.co.uk/ProductDetail/Infineon-Technologies/IRFZ34NPBF?qs=9%252BKlkBgLFf3Kc9ZWbyua6Q%3D%3D
+Guitar thickness = 11.3cm, 4cm between inner servo flanges, 3cm between 2 consecutive servo flanges, servo 17mm thick, m2.5 bolt holes, height above guitar lower edge 19mm, bar thickness <15mm, body to hole center ~3mm maybe check.
+Guitar width ~30cm
+https://github.com/natecdr/tuttut midi -> tab
 
+
+1. get single channel guitar only midi (python)
+2. convert to intermediate representation string and fret number greedy? (python)
+3. read intermediate representation (cpp)
+4. convert to movements/or sounds in model(cpp)
+
+1. Can either be different tracs for different instruments or single track, just merge and get rid of non guitar sounds (at least for now)
+Program_change messages specify which channel contains which instrument, use this to filter
+2. Note assigning algorithm deal with decisions/conflicts. start with classical midi for algo dev -strictly guitar
+
+https://www.twilio.com/en-us/blog/working-with-midi-data-in-python-using-mido
