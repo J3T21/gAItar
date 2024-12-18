@@ -1,23 +1,25 @@
 #include <Arduino.h>
+#include <Servo.h>
 
 // put function declarations here:
 int myFunction(int, int);
 
+Servo myservo;
+
+int pos = 85;    // variable to store the servo position
+
 void setup() {
-  // put your setup code here, to run once:
-  int result = myFunction(2, 3);
-  pinMode(13, OUTPUT);
+  myservo.attach(9);  // attaches the servo on pin 9 to the servo object
 }
 
 void loop() {
-  digitalWrite(13, HIGH);
-  delay(100);
-  digitalWrite(13, LOW);
-  delay(100);
-  // put your main code here, to run repeatedly:
-}
-
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
+  for (pos = 85; pos <= 130; pos += 5) { // goes from 0 degrees to 180 degrees
+    // in steps of 1 degree
+    myservo.write(pos);              // tell servo to go to position in variable 'pos'
+    delay(15);                       // waits 15ms for the servo to reach the position
+  }
+  for (pos = 130; pos >= 85; pos -= 5) { // goes from 180 degrees to 0 degrees
+    myservo.write(pos);              // tell servo to go to position in variable 'pos'
+    delay(15);                       // waits 15ms for the servo to reach the position
+  }
 }
