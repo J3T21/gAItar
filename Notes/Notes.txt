@@ -15,3 +15,6 @@ Program_change messages specify which channel contains which instrument, use thi
 2. Note assigning algorithm deal with decisions/conflicts. start with classical midi for algo dev -strictly guitar
 
 https://www.twilio.com/en-us/blog/working-with-midi-data-in-python-using-mido
+
+around delay of 60 seems to be min delay
+if notes are "simultaneous" delay after all simultaneous notes (no delays in between).
