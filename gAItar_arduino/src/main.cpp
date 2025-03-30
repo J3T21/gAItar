@@ -87,10 +87,10 @@ void loop() {
         byte oneHotValue = 1 << solenoid;
         // Send the one-hot encoded value to the shift register
         shiftOut(dataPin, clockPin, MSBFIRST, oneHotValue);
-        delay(1000); // delay 1000ms to observe the change
+        delay(100); // delay 1000ms to observe the change
         // Clear the shift register by sending 0
         shiftOut(dataPin, clockPin, MSBFIRST, 0);
-        delay(1000); // delay 1000ms to observe the change
+        delay(100); // delay 1000ms to observe the change
     }
 
     for (int solenoid = 7; solenoid > 5; solenoid--) {
@@ -98,10 +98,14 @@ void loop() {
         byte oneHotValue = 1 << solenoid;
         // Send the one-hot encoded value to the shift register
         shiftOut(dataPin, clockPin, MSBFIRST, oneHotValue);
-        delay(1000); // delay 1000ms to observe the change
+        delay(100); // delay 1000ms to observe the change
         // Clear the shift register by sending 0
         shiftOut(dataPin, clockPin, MSBFIRST, 0);
-        delay(1000); // delay 1000ms to observe the change
+        delay(100); // delay 1000ms to observe the change
     }
-    //delay(1000);
+    delay(1000);
+    shiftOut(dataPin, clockPin, MSBFIRST, 207);
+    delay(10000); // delay 1000ms to observe the change
+    shiftOut(dataPin, clockPin, MSBFIRST, 0);
+    delay(1000); // delay 1000ms to observe the change
 }
