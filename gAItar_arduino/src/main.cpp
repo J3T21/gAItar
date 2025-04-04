@@ -1,6 +1,102 @@
 #include <Arduino.h>
 #include <Servo.h>
 
+#define NUM_FRETS 9
+
+#define string1 0b00000010 // Initialize string1
+#define string2 0b00000001 // Initialize string2
+#define string3 0b00001000 // Initialize string3
+#define string4 0b00000100 // Initialize string4
+#define string6 0b10000000 // Initialize string5
+#define string5 0b01000000 // Initialize string6
+
+#define clearPin1 24
+#define clkPin1 22
+#define dataPin1 26
+
+#define clearPin2 30
+#define clkPin2 28
+#define dataPin2 32
+
+#define clearPin3 36
+#define clkPin3 34
+#define dataPin3 38
+
+#define clearPin4 42
+#define clkPin4 40
+#define dataPin4 44
+
+#define clearPin5 48
+#define clkPin5 50
+#define dataPin5 46
+
+#define clearPin6 25
+#define clkPin6 23
+#define dataPin6 27
+
+#define clearPin7 31
+#define clkPin7 29
+#define dataPin7 33
+
+#define clearPin8 37
+#define clkPin8 35
+#define dataPin8 39
+
+#define clearPin9 43
+#define clkPin9 41
+#define dataPin9 45
+
+const int fretPins[NUM_FRETS][3] = {
+    {clkPin1, dataPin1, clearPin1},
+    {clkPin2, dataPin2, clearPin2},
+    {clkPin3, dataPin3, clearPin3},
+    {clkPin4, dataPin4, clearPin4},
+    {clkPin5, dataPin5, clearPin5},
+    {clkPin6, dataPin6, clearPin6},
+    {clkPin7, dataPin7, clearPin7},
+    {clkPin8, dataPin8, clearPin8},
+    {clkPin9, dataPin9, clearPin9} // Add more frets as needed need to fix fret 9 pushing away too much
+}; 
+
+const byte stringOrder[6] = {
+    string1, // String 1
+    string2, // String 2
+    string3, // String 3
+    string4, // String 4
+    string5, // String 5
+    string6 // String 6
+};
+
+void clearInactiveFrets(int fretActive) {
+    for (int i = 0; i < NUM_FRETS; i++) {
+        if (i != fretActive) {
+            digitalWrite(fretPins[i][2], LOW); // Set clear pin low to disable the shift register
+        }
+    }
+}
+
+void testFret(int start_fret, int timeHold){
+    for (int i = start_fret - 1 ; i < NUM_FRETS; i++){
+        int clkPin = fretPins[i][0];
+        int dataPin = fretPins[i][1];
+        int clearPin = fretPins[i][2];
+        clearInactiveFrets(i); // Clear inactive frets
+        for (int string = 0; string < 6; string++) {  
+            // Send the one-hot encoded value to the shift register
+            digitalWrite(clearPin, HIGH); // Set clear pin high to enable the shift register
+            shiftOut(dataPin, clkPin, MSBFIRST, stringOrder[string]);
+            delay(timeHold); // delay 1000ms to observe the change
+            shiftOut(dataPin, clkPin, MSBFIRST, 0);
+            delay(timeHold); // delay 1000ms to observe the change    
+        }
+        shiftOut(dataPin, clkPin, MSBFIRST, 207);
+        delay(timeHold); // delay 1000ms to observe the change
+        shiftOut(dataPin, clkPin, MSBFIRST, 0);
+        delay(timeHold); // delay 1000ms to observe the change
+    }
+
+}
+
 class ServoController {
 private:
     Servo servo;         // Servo object from the Servo library
@@ -32,9 +128,6 @@ public:
     }
 };
 
-const int clearPin = 9;
-const int clockPin = 8;
-const int dataPin = 10;
 
 // Global instance of ServoController
 ServoController servo1(14, 97, 111);
@@ -45,67 +138,19 @@ ServoController servo5(18, 80, 91);
 ServoController servo6(19, 95, 110);
 
 void setup() {
-    // Serial.begin(9600); // Serial comm begin at 9600bps
-    // Initialization handled in the ServoController constructor
-    pinMode(clearPin, OUTPUT);
-    pinMode(clockPin, OUTPUT);
-    pinMode(dataPin, OUTPUT);
-    digitalWrite(clockPin, LOW);
-    digitalWrite(clearPin, HIGH);
+
+    for (int i = 0; i < NUM_FRETS; i++)
+    {
+        pinMode(fretPins[i][0], OUTPUT); // Set clock pin as output
+        pinMode(fretPins[i][1], OUTPUT); // Set data pin as output
+        pinMode(fretPins[i][2], OUTPUT); // Set clear pin as output
+        digitalWrite(fretPins[i][0], LOW); // Set clock pin LOW to start
+        digitalWrite(fretPins[i][2], LOW); // Set clear pin LOW to clear the shift register initially
+    }
+    
+
 }
 
 void loop() {
-    // if (Serial.available()) // if serial value is available
-    // { 
-    // int val = Serial.read();// then read the serial value
-    // switch (val) {
-    //     case '1':
-    //         servo1.move(0);
-    //         break;
-    //     case '2':
-    //         servo2.move(0);
-    //         break;
-    //     case '3':
-    //         servo3.move(0);
-    //         break;
-    //     case '4':
-    //         servo4.move(0);
-    //         break;
-    //     case '5':
-    //         servo5.move(0);
-    //         break;
-    //     case '6':
-    //         servo6.move(0);
-    //         break;
-    //     default:
-    //         break;
-    // }
-    // //delay(100); // Delay to control the speed of the servo
-    // }
-    for (int solenoid = 0; solenoid < 4; solenoid++) {
-
-        byte oneHotValue = 1 << solenoid;
-        // Send the one-hot encoded value to the shift register
-        shiftOut(dataPin, clockPin, MSBFIRST, oneHotValue);
-        delay(100); // delay 1000ms to observe the change
-        // Clear the shift register by sending 0
-        shiftOut(dataPin, clockPin, MSBFIRST, 0);
-        delay(100); // delay 1000ms to observe the change
-    }
-
-    for (int solenoid = 7; solenoid > 5; solenoid--) {
-
-        byte oneHotValue = 1 << solenoid;
-        // Send the one-hot encoded value to the shift register
-        shiftOut(dataPin, clockPin, MSBFIRST, oneHotValue);
-        delay(100); // delay 1000ms to observe the change
-        // Clear the shift register by sending 0
-        shiftOut(dataPin, clockPin, MSBFIRST, 0);
-        delay(100); // delay 1000ms to observe the change
-    }
-    delay(1000);
-    shiftOut(dataPin, clockPin, MSBFIRST, 207);
-    delay(10000); // delay 1000ms to observe the change
-    shiftOut(dataPin, clockPin, MSBFIRST, 0);
-    delay(1000); // delay 1000ms to observe the change
+    testFret(8, 1000);
 }
