@@ -44,10 +44,6 @@ def strip_non_melodic_and_preserve_tempo(input_file, output_file):
     print(f"🎵 Saved: {output_file} (melodic-only with preserved tempo changes)")
 
 def process_midi_to_guitar_from_midi(file_path, max_frets=12):
-    """
-    Process a MIDI file and return guitar pluck events as (delta_ms, string, fret).
-    Delta is the time to wait before this event (in milliseconds).
-    """
     mid = mido.MidiFile(file_path)
     PPQ = mid.ticks_per_beat
     DEFAULT_TEMPO = 500000  # µs per quarter note
@@ -61,21 +57,16 @@ def process_midi_to_guitar_from_midi(file_path, max_frets=12):
         1: 64   # E4
     }
 
-    commands = []
-    active_notes = {}
-    string_usage = {s: None for s in STRING_OPEN_NOTES}
+    # Store active notes per string to ensure a string isn't used for multiple notes simultaneously
+    active_notes = {s: None for s in STRING_OPEN_NOTES}
 
-    absolute_time = 0.0
+    absolute_time = 0.0  # Start time for the first event
     events = []
-
     tempo = DEFAULT_TEMPO
 
-    # Collect all note-on events with accurate time (in ms)
     for track in mid.tracks:
         time = 0.0
         local_tempo = tempo
-        local_string_usage = string_usage.copy()
-        local_active_notes = {}
 
         for msg in track:
             time += mido.tick2second(msg.time, PPQ, local_tempo)
@@ -85,40 +76,48 @@ def process_midi_to_guitar_from_midi(file_path, max_frets=12):
 
             elif msg.type == 'note_on' and msg.velocity > 0 and msg.channel != 9:
                 note = msg.note
-                for s in sorted(STRING_OPEN_NOTES.keys(), reverse=True):
+                note_played = False  # Flag to track if the note was successfully played
+
+                for s in sorted(STRING_OPEN_NOTES.keys(), reverse=True):  # Start with lower strings first
                     open_note = STRING_OPEN_NOTES[s]
                     fret = note - open_note
-                    if 0 <= fret <= max_frets and local_string_usage[s] is None:
-                        event_time_ms = round(time * 1000)
-                        events.append((event_time_ms, s, fret))
-                        local_string_usage[s] = note
-                        local_active_notes[note] = s
-                        break
+                    if 0 <= fret <= max_frets:
+                        # Check if the string is already in use (active note is mapped to it)
+                        if active_notes[s] is None:
+                            event_time_ms = round((absolute_time + time) * 1000)  # Absolute time in ms
+                            events.append((event_time_ms, s, fret, 'on'))
+                            active_notes[s] = note  # Mark the string as in use by this note
+                            note_played = True
+                            break  # Note played successfully, stop searching
+
+                if not note_played:
+                    # Skip the note if no string was available
+                    continue
 
             elif (msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0)) and msg.channel != 9:
                 note = msg.note
-                if note in local_active_notes:
-                    s = local_active_notes[note]
-                    local_string_usage[s] = None
-                    del local_active_notes[note]
+                for s in active_notes:
+                    if active_notes[s] == note:  # Find the string associated with the note
+                        event_time_ms = round((absolute_time + time) * 1000)  # Absolute time in ms
+                        events.append((event_time_ms, s, -1, 'off'))  # Note-off event
+                        active_notes[s] = None  # Release the string after note-off
+                        break
 
-    # Sort events by time, then convert to delta time
+    # Sort events by absolute time
     events.sort()
     output = []
-    last_time = 0
-    for t, s, f in events:
-        delta = t - last_time
-        output.append((delta, s, f))
-        last_time = t
+    for t, s, f, status in events:
+        output.append((t, s, f, status))
 
     # Format the output as a C-style array
     event_string = "const int events[][3] = {\n"
-    for delta, string, fret in output:
-        event_string += f"    {{{delta}, {string}, {fret}}},\n"
+    for absolute_time, string, fret, status in output:
+        event_string += f"    {{{absolute_time}, {string}, {fret}}},\n"
     event_string = event_string.rstrip(",\n")  # Remove last comma
     event_string += "\n};"
     pyperclip.copy(event_string)
     return event_string
+
 
 
 def write_guitar_events_to_binary(events, output_path):
