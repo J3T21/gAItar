@@ -1,0 +1,67 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f4f4f9;
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.player-controls {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 20px;
+}
+
+.control-btn {
+    background-color: #3498db;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    margin: 0 10px;
+    font-size: 16px;
+    cursor: pointer;
+    border-radius: 5px;
+}
+
+.control-btn:hover {
+    background-color: #2980b9;
+}
+
+.time-display {
+    text-align: center;
+    font-size: 18px;
+    margin-bottom: 20px;
+}
+
+.song-library, .queue {
+    margin-bottom: 20px;
+}
+
+.song-library ul, .queue ul {
+    list-style-type: none;
+    padding: 0;
+}
+
+.song-library li, .queue li {
+    padding: 10px;
+    background-color: #fff;
+    margin: 5px 0;
+    border-radius: 5px;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.1);
+}
+
+.genre-selection, .upload-section {
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#uploadFile {
+    padding: 5px;
+}

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Player</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Player Controls -->
+        <div class="player-controls">
+            <button id="shuffle" class="control-btn">Shuffle</button>
+            <button id="prev" class="control-btn">Prev</button>
+            <button id="playPause" class="control-btn">Play</button>
+            <button id="next" class="control-btn">Next</button>
+        </div>
+
+        <!-- Time Display -->
+        <div class="time-display">
+            <span id="elapsed">00:00</span> / <span id="total">03:00</span>
+        </div>
+
+        <!-- Song Library -->
+        <div class="song-library">
+            <h3>Library of Songs</h3>
+            <ul id="songList">
+                <!-- Songs will be dynamically added here -->
+            </ul>
+        </div>
+
+        <!-- Genre Selection -->
+        <div class="genre-selection">
+            <label for="genre">Select Genre:</label>
+            <select id="genre">
+                <option value="rock">Rock</option>
+                <option value="pop">Pop</option>
+                <option value="jazz">Jazz</option>
+                <option value="classical">Classical</option>
+            </select>
+        </div>
+
+        <!-- Upload Music -->
+        <div class="upload-section">
+            <input type="file" id="uploadFile" accept="audio/*" />
+        </div>
+
+        <!-- Queue -->
+        <div class="queue">
+            <h3>Queue</h3>
+            <ul id="queueList">
+                <!-- Queue will be populated here -->
+            </ul>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

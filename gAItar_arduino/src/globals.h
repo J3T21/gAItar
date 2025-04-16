@@ -57,11 +57,11 @@ extern const byte stringOrder[6];
 extern const int events[][3]; // {delta_ms, string, fret}
 extern const size_t eventCount;
 extern byte lh_state[NUM_FRETS]; // Left hand state for each fret
-extern ServoController servo1;
-extern ServoController servo2;
-extern ServoController servo3;
-extern ServoController servo4;
-extern ServoController servo5;
-extern ServoController servo6;
+extern PwmServoController servo1;
+extern PwmServoController servo2;
+extern PwmServoController servo3;
+extern PwmServoController servo4;
+extern PwmServoController servo5;
+extern PwmServoController servo6;
 
 #endif // GLOBALS_H

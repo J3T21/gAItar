@@ -1,12 +1,12 @@
 #include "globals.h"
 
 
-ServoController servo6(0, 78, 97);
-ServoController servo5(1, 94, 75);
-ServoController servo4(2, 83, 101);
-ServoController servo3(3, 81, 101);
-ServoController servo2(4, 84, 102);
-ServoController servo1(5, 77, 99);
+PwmServoController servo6(2, 150, 170);
+PwmServoController servo5(3, 150, 170);
+PwmServoController servo4(4, 150, 170);
+PwmServoController servo3(5, 150, 170);
+PwmServoController servo2(6, 150, 170);
+PwmServoController servo1(7, 150, 170);
 
 byte lh_state[NUM_FRETS] = {0}; // array to hold the state of the left hand
 

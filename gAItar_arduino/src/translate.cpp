@@ -10,7 +10,7 @@ void playGuitarEvents() {
 
     for (size_t i = 0; i < eventCount; ++i) {
         // Retrieve event details from the event array
-        unsigned long eventTime = events[i][0];  // Absolute event time in ms
+        unsigned long eventTime = 50*events[i][0];  // Absolute event time in ms
         int string = events[i][1];
         int fret = events[i][2];
 

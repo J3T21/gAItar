@@ -10,9 +10,12 @@
 #include "globals.h"
 #include "translate.h"
 
-void setup() {
-    Serial.begin(9600); // Initialize serial communication for debugging
 
+void setup() {
+    Serial.begin(115200); // Initialize serial communication for debugging
+    Serial1.begin(1000000);
+    Serial4.begin(1000000);
+    delay(1000); // Wait for serial to initialize
     for (int i = 0; i < NUM_FRETS; i++)
     {
         pinMode(fretPins[i][0], OUTPUT); // Set clock pin as output
@@ -24,5 +27,19 @@ void setup() {
 }
 
 void loop() {
-    playGuitarEvents(); // Call the function to play guitar events
+    if (Serial1.available()) {
+        Serial.println("Serial1 available");
+        Serial.write(Serial1.read());
+      }
+    if (Serial4.available()) {
+        Serial.println("Serial4 available");
+        Serial.write(Serial4.read());
+      }
+    
+      if (Serial.available()) {
+        char c = Serial.read(); // Read a character from the serial monitor
+        Serial1.write(c);
+        Serial4.write(c);
+      }
+
 }

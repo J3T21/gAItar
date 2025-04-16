@@ -26,7 +26,7 @@ void testFret(int start_fret, int timeHold, int stop_Fret){
 
 void testCombined(int start_fret, int timeHold){
     // make array of servo objects
-    ServoController servos[] = {servo1, servo2, servo3, servo4, servo5, servo6};
+    PwmServoController servos[] = {servo1, servo2, servo3, servo4, servo5, servo6};
     for (int i = start_fret - 1 ; i < NUM_FRETS; i++){
         int clkPin = fretPins[i][0];
         int dataPin = fretPins[i][1];
@@ -58,21 +58,27 @@ void testCombined(int start_fret, int timeHold){
             switch (val) {
                 case '1':
                     servo1.move(0);
+                    delay(100);
                     break;
                 case '2':
                     servo2.move(0);
+                    delay(100);
                     break;
                 case '3':
                     servo3.move(0);
+                    delay(100);
                     break;
                 case '4':
                     servo4.move(0);
+                    delay(100);
                     break;
                 case '5':
                     servo5.move(0);
+                    delay(100);
                     break;
                 case '6':
                     servo6.move(0);
+                    delay(100);
                     break;
                 default:
                     break;
