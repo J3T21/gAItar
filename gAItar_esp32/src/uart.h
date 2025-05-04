@@ -14,6 +14,6 @@ extern HardwareSerial& upload_uart;
 
 void setupUARTs();
 void instructionToSAMD(uint8_t instruction);
-void uploadToSAMD(const uint8_t *data, size_t length);
+void uploadToSAMD(bool &sendFile,const String &filePath);
 
 #endif

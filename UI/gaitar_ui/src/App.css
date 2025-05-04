@@ -1,0 +1,170 @@
+/* Global Body and Layout */
+body {
+  background-color: #121212;
+  color: #e0e0e0;
+  font-family: 'Inter', sans-serif;
+  margin: 0;
+  padding: 0;
+  line-height: 1.5;
+  overflow-x: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+/* App Header */
+.App-header {
+  background-color: #181818;
+  width: 100%;
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  padding: 30px 15px;
+  border-radius: 10px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+}
+
+h1 {
+  text-align: center;
+  color: #ffffff;
+  margin-top: 10px;
+  font-size: 2.2em;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+h3 {
+  text-align: center;
+  color: #a0a0a0;
+  margin-top: 10px;
+  font-size: 1em;
+  font-weight: 400;
+}
+
+button {
+  background-color: #1db954;
+  color: #ffffff;
+  padding: 10px 24px;
+  border: none;
+  border-radius: 50px;
+  font-size: 14px;
+  cursor: pointer;
+  margin: 8px;
+  transition: background-color 0.3s ease, transform 0.2s ease;
+  font-weight: 500;
+  text-transform: uppercase;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+button:hover {
+  background-color: #1aa34a;
+  transform: translateY(-2px);
+}
+
+button:active {
+  background-color: #178f3f;
+  transform: translateY(0);
+}
+
+.controls {
+  text-align: center;
+  margin-top: 20px;
+}
+
+.playback-info {
+  margin-top: 15px;
+  width: 100%;
+  text-align: center;
+  color: #d1d1d1;
+}
+
+.progress-bar-container {
+  width: 100%;
+  max-width: 600px;
+  height: 8px;
+  background-color: #282828;
+  border-radius: 4px;
+  margin: 15px auto;
+  position: relative;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+}
+
+.progress-bar {
+  position: absolute;
+  height: 100%;
+  background: linear-gradient(90deg, #1db954, #1aa34a);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.progress-bar-scrubber {
+  position: absolute;
+  top: -5px;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  background-color: #ffffff;
+  border-radius: 50%;
+  border: 2px solid #1db954;
+  cursor: pointer;
+  transition: transform 0.2s ease, background-color 0.3s ease;
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.3);
+}
+
+.progress-bar-scrubber:hover {
+  background-color: #1db954;
+  transform: scale(1.1);
+}
+
+.progress-bar-scrubber:active {
+  background-color: #1aa34a;
+  transform: scale(1);
+}
+
+/* Time Info */
+.time-info {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #a0a0a0;
+}
+
+.progress-bar-time {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 13px;
+  color: #b3b3b3;
+  font-weight: 500;
+}
+
+.progress-bar-time span {
+  font-size: 14px;
+  font-weight: bold;
+  color: #a0a0a0;
+}
+
+.App-logo {
+  height: 35vmin;
+  pointer-events: none;
+  margin-bottom: 15px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 10s linear;
+  }
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

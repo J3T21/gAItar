@@ -5,6 +5,8 @@ import serial
 import struct
 import time
 import pyperclip
+
+
 def extract_global_meta_messages(mid):
     """Gather all tempo/key/time meta messages from all tracks."""
     meta_track = mido.MidiTrack()

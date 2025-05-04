@@ -3,34 +3,8 @@
 #include <ArduinoJson.h>
 #include "FS.h"
 #include "SPIFFS.h"
-
-
-void handleUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
-  if (index == 0) {
-    Serial.printf("UploadStart: %s\n", filename.c_str());
-  }
-
-  uploadToSAMD(data, len);  // Send data to SAMD
-
-  if (final) {
-    Serial.printf("UploadEnd: %s, %u bytes\n", filename.c_str(), index + len);
-  }
-}
-
-void setupWebServer(AsyncWebServer& server) {
-  server.on("/upload", HTTP_POST,
-    [](AsyncWebServerRequest *request){
-      request->send(200, "text/plain", "Upload complete");
-    },
-    handleUpload
-  );
-
-  server.onNotFound([](AsyncWebServerRequest *request) {
-    request->send(404, "text/plain", "Not found");
-  });
-
-  server.begin();
-}
+#include "uart.h"
+#include "globals.h"
 
 void setupTestServer(AsyncWebServer& server) {
   // Handle preflight (CORS OPTIONS) requests globally
@@ -87,6 +61,8 @@ void setupTestServer(AsyncWebServer& server) {
       if (final) {
           request->_tempFile.close();  // Close the file after upload
           Serial.printf("Upload complete: %s\n", filename.c_str());
+          sendFile = true;
+          filePath = "/" + filename;  // Set the file path to be sent
       }
   };
   };
@@ -101,4 +77,15 @@ void setupTestServer(AsyncWebServer& server) {
     request->send(200, "text/plain", "upload handler esp");
   },handleFile("Upload"), handleBody("Upload")
 );
-  server.begin();}
+  server.begin();
+}
+
+void listSPIFFSFiles() {
+  File root = SPIFFS.open("/");
+  File file = root.openNextFile();
+  while (file) {
+    Serial.println(file.name());
+    file = root.openNextFile();
+  }
+}
+
