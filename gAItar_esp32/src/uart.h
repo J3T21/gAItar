@@ -12,9 +12,8 @@ extern HardwareSerial& instruction_uart;
 extern HardwareSerial& upload_uart;
 
 
-void setupUART(int baudRate, int rxPin, int txPin);
+void setupUARTs();
 void instructionToSAMD(uint8_t instruction);
-void uploadToSAMD(uint8_t *data, size_t length);
-void printResponse();
+void uploadToSAMD(const uint8_t *data, size_t length);
 
 #endif
