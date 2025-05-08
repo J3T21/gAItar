@@ -5,7 +5,7 @@ import { esp32 } from '../api';
 const Controls = ({ currentTrack, setCurrentTrack, currentPlaylist }) => {
       const handlePlay = () => {
         console.log('Play:', currentTrack);
-        esp32.post('/play', { track: currentTrack })
+        esp32.post('/play',  currentTrack )
           .then(response => console.log('Playing track on ESP32:', response.data))
           .catch(error => console.error('Error playing track on ESP32:', error));
       };
@@ -21,14 +21,14 @@ const Controls = ({ currentTrack, setCurrentTrack, currentPlaylist }) => {
         const nextTrackIndex = (currentPlaylist.indexOf(currentTrack) + 1) % currentPlaylist.length;
         const nextTrack = currentPlaylist[nextTrackIndex];
         setCurrentTrack(nextTrack);
-        esp32.post('/skip', { track: nextTrack })
+        esp32.post('/skip', { nextTrack })
           .then(response => console.log('Skipped to track on ESP32:', response.data))
           .catch(error => console.error('Error skipping track on ESP32:', error));
       };
     
       const handleShuffle = () => {
         const shuffledPlaylist = [...currentPlaylist].sort(() => Math.random() - 0.5);
-        esp32.post('/shuffle', { playlist: shuffledPlaylist })
+        esp32.post('/shuffle', { shuffledPlaylist })
           .then(response => console.log('Shuffled playlist on ESP32:', response.data))
           .catch(error => console.error('Error shuffling playlist on ESP32:', error));
       };

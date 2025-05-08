@@ -10,8 +10,6 @@
 
 const char* ssid = "gAItar_wifi";  // Your WiFi SSID
 const char* password = "gAItar123";    // Your WiFi password
-bool sendFile = false; // Flag to indicate if a file is being sent
-String filePath = ""; // Path to the file to be sent
 
 static AsyncWebServer server(80);
 
@@ -28,9 +26,13 @@ void setup() {
   Serial.println("IP Address: " + WiFi.softAPIP().toString());
   setupTestServer(server); //test post requests to server
   setupUARTs();  // Initialize UART communication
+  listSPIFFSFiles();
+  Serial.println("Clearing files...");
+  formatSPIFFS(); // Clear SPIFFS
+  listSPIFFSFiles(); // List files after clearing
 
 }
 
 void loop() {
-  uploadToSAMD(sendFile, filePath); // Send file to SAMD microcontroller if needed
+  uploadToSAMD_state(sendFile, filePath); // Send file to SAMD microcontroller if needed
 }

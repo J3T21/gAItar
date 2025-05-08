@@ -4,10 +4,10 @@ import React from 'react';
 const Playlist = ({ currentPlaylist, selectPlaylist }) => {
   return (
     <div>
-      <h3>Playlist</h3>
+      <h3>Current Playlist</h3> {/* Added title */}
       <ul>
         {currentPlaylist.map((track, index) => (
-          <li key={index}>
+          <li key={index} onClick={() => selectPlaylist(track)}>
             {track}
           </li>
         ))}

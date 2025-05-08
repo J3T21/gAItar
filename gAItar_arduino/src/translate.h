@@ -6,7 +6,7 @@
 #include "pwm_shift_solenoid.h"
 #include "shift_solenoid.h"
 
-void playGuitarEvents();  // Function declaration
+//void playGuitarEvents();  // Function declaration
 
 unsigned long getCurrentTime();  // Function to get the current time
 // If needed elsewhere, also expose time and note state:

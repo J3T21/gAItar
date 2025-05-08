@@ -12,8 +12,10 @@ extern HardwareSerial& instruction_uart;
 extern HardwareSerial& upload_uart;
 
 
-void setupUARTs();
-void instructionToSAMD(uint8_t instruction);
-void uploadToSAMD(bool &sendFile,const String &filePath);
 
+void setupUARTs();
+void instructionToSAMD(const uint8_t* instruction, size_t length);
+void uploadToSAMD(bool &sendFile,const String &filePath);
+void uploadToSAMD_chunk(bool &sendFile, const String &filePath);
+void uploadToSAMD_state(bool &sendFile, const String &filePath);
 #endif

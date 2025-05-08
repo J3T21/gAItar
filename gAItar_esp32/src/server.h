@@ -6,4 +6,7 @@
 void setupTestServer(AsyncWebServer &server);
 
 void listSPIFFSFiles();
+
+void formatSPIFFS();
+
 #endif

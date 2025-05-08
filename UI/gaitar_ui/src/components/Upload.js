@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { backend_api, esp32 } from '../api'; // Import the API instance
-import '../css/upload.css'; // Import the CSS file for styling
 
-const Upload = ({ genres, artists, setTrackMetadata, onUpload, addArtist }) => {
+const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, addArtist }) => {
   const [file, setFile] = useState(null);
   const [genre, setGenre] = useState('');
   const [title, setTitle] = useState('');
@@ -52,12 +51,17 @@ const Upload = ({ genres, artists, setTrackMetadata, onUpload, addArtist }) => {
           console.log('Track metadata:', response.data);
           const json = JSON.stringify(response.data);
           console.log("JSON size (bytes):", new TextEncoder().encode(json).length);
-          const filename = `${title}_${artist}.json`;
+          const sanitizedTitle = response.data.title.replace(/\s+/g, '_');
+          const sanitizedArtist = response.data.artist.replace(/\s+/g, '_');
+          const sanitizedGenre = response.data.genre.replace(/\s+/g, '_');
+          const filename = `temp.json`;
           const blob = new Blob([json], { type: 'application/json' });
           const file = new File([blob], filename, { type: 'application/json' });
           const espData = new FormData();
-          espData.append('data', file);
-        
+          espData.append('data', file); // the JSON file
+          espData.append('title', sanitizedTitle);
+          espData.append('artist', sanitizedArtist);
+          espData.append('genre', sanitizedGenre);      
           try {
             await esp32.post('/upload', espData, {
               headers: {
@@ -109,17 +113,15 @@ const Upload = ({ genres, artists, setTrackMetadata, onUpload, addArtist }) => {
 
   // Filter genres and artists based on search term
   const filteredGenres = genres.filter((g) =>
-    g.name.toLowerCase().includes(searchTerm.toLowerCase())
+    g.name && g.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const filteredArtists = artists.filter((a) =>
-    a.name.toLowerCase().includes(artistSearchTerm.toLowerCase())
+    a.name && a.name.toLowerCase().includes(artistSearchTerm.toLowerCase())
   );
 
   return (
     <div>
-      <h4>Upload a MIDI File</h4>
-      {/* File upload section */}
       <input type="file" onChange={handleFileChange} accept=".midi, .mid" />
       <input
         type="text"
@@ -133,7 +135,7 @@ const Upload = ({ genres, artists, setTrackMetadata, onUpload, addArtist }) => {
         <div className="artist-selection-container">
           <input
             type="text"
-            placeholder="Search or Add Artist"
+            placeholder="Add Artist"
             value={artistSearchTerm}
             onChange={(e) => {
               setArtistSearchTerm(e.target.value);
@@ -161,7 +163,7 @@ const Upload = ({ genres, artists, setTrackMetadata, onUpload, addArtist }) => {
         <div className="genre-selection-container">
           <input
             type="text"
-            placeholder="Search or Add Genre"
+            placeholder="Add Genre"
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);

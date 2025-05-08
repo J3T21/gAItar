@@ -28,17 +28,69 @@ void setupTestServer(AsyncWebServer& server) {
       Serial.println(label);
       AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", label + " command received");
       request->send(response);
+      String artist, title, genre;
+      if (request->hasParam("artist", true)) {
+        artist = request->getParam("artist", true)->value();
+        Serial.printf("Artist: %s\n", artist.c_str());
+      }
+      if (request->hasParam("title", true)) {
+        title = request->getParam("title", true)->value();
+        Serial.printf("Title: %s\n", title.c_str());
+      }
+      if (request->hasParam("genre", true)) {
+        genre = request->getParam("genre", true)->value();
+        Serial.printf("Genre: %s\n", genre.c_str());
+      }
+      filePath = "/" +genre + "/" + artist + "/" + title + ".json";
+    };
+  };
+
+  auto handlePauseRequest = [](const String &label) {
+    return [label](AsyncWebServerRequest *request) {
+      Serial.println(label);
+      AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", label + " command received");
+      request->send(response);
+      instructionToSAMD(reinterpret_cast<const uint8_t *>(label.c_str()), label.length());
     };
   };
 
   auto handleBody = [](const String &label) {
     return [label](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-      String body = "";
-      for (size_t i = 0; i < len; i++) {
-        body += (char)data[i];
-      }
-      Serial.println("[" + label + "] Body: " + body);
+      Serial.printf("[%s] Received %u bytes\n", label.c_str(), len);
+  
+      // Build full command: [label]:[data]
+      String labelPrefix = "[" + label + "]";
+      size_t prefixLen = labelPrefix.length();
+      size_t totalLen = prefixLen + len;
+  
+      // Allocate buffer to hold full message
+      uint8_t* fullMessage = new uint8_t[totalLen];
+  
+      // Copy label into the buffer
+      memcpy(fullMessage, labelPrefix.c_str(), prefixLen);
+  
+      // Append raw data after the label
+      memcpy(fullMessage + prefixLen, data, len);
 
+      Serial.print("Full message (ascii): ");
+      for (size_t i = 0; i < totalLen; i++) {
+        char c = fullMessage[i];
+        if (isPrintable(c)) {
+          Serial.print(c);
+        } else {
+          Serial.print(".");
+        }
+      }
+      Serial.println();
+
+  
+      // Send to SAMD
+      instructionToSAMD(fullMessage, totalLen);
+  
+      // Clean up
+      delete[] fullMessage;
+  
+      // Respond to client
       AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", label + " command with body received");
       request->send(response);
     };
@@ -49,8 +101,8 @@ void setupTestServer(AsyncWebServer& server) {
       Serial.printf("Upload[%s]: index=%u, len=%u, final=%d\n", filename.c_str(), index, len, final);
   
       if (!index) {
-          request->_tempFile=SPIFFS.open("/" + filename, FILE_WRITE);  // Open file for writing
-          Serial.printf("Starting upload: %s\n", filename.c_str());
+          request->_tempFile=SPIFFS.open("/temp", FILE_WRITE);  // Open file for writing
+          Serial.printf("Starting upload: %s\n", "/temp");
       }
   
       if (len) {
@@ -62,21 +114,17 @@ void setupTestServer(AsyncWebServer& server) {
           request->_tempFile.close();  // Close the file after upload
           Serial.printf("Upload complete: %s\n", filename.c_str());
           sendFile = true;
-          filePath = "/" + filename;  // Set the file path to be sent
+          //filePath = "/" + filename;  // Set the file path to be sent
       }
   };
   };
 
   // Routes
   server.on("/play", HTTP_POST, handleRequest("Play"), nullptr, handleBody("Play"));
-  server.on("/pause", HTTP_POST, handleRequest("Pause"), nullptr, handleBody("Pause"));
+  server.on("/pause", HTTP_POST, handlePauseRequest("Pause"), nullptr, nullptr);
   server.on("/skip", HTTP_POST, handleRequest("Skip"), nullptr, handleBody("Skip"));
   server.on("/shuffle", HTTP_POST, handleRequest("Shuffle"), nullptr, handleBody("Shuffle"));
-  server.on("/upload", HTTP_POST, [](AsyncWebServerRequest *request){
-    Serial.println("Upload request handler");
-    request->send(200, "text/plain", "upload handler esp");
-  },handleFile("Upload"), handleBody("Upload")
-);
+  server.on("/upload", HTTP_POST, handleRequest("Upload"),handleFile("Upload"), nullptr);
   server.begin();
 }
 
@@ -89,3 +137,10 @@ void listSPIFFSFiles() {
   }
 }
 
+void formatSPIFFS() {
+  if (SPIFFS.format()) {
+    Serial.println("SPIFFS formatted successfully.");
+  } else {
+    Serial.println("Failed to format SPIFFS.");
+  }
+}

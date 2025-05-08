@@ -1,8 +1,10 @@
 #ifndef GLOBALS_H
 #define GLOBALS_H
 #include <Arduino.h> // contains byte
+#include <SdFat.h>
 #include "servo_toggle.h"
 
+#define BAUDRATE 1000000
 #define NUM_FRETS 10 //number of implemented frets
 
 #define string1 0b00000001 // Initialize string1 LSB first
@@ -52,10 +54,12 @@
 #define clkPin10 47
 #define dataPin10 51
 
+extern Uart &dataUart; // Define the UART interface for data transfer
+extern Uart &instructionUart; // Define the UART interface for instructions
+extern SdFat sd; // SD card object
 extern const int fretPins[NUM_FRETS][3];  // clk, data, clear
 extern const byte stringOrder[6];
-extern const int events[][3]; // {delta_ms, string, fret}
-extern const size_t eventCount;
+//extern const size_t eventCount;
 extern byte lh_state[NUM_FRETS]; // Left hand state for each fret
 extern PwmServoController servo1;
 extern PwmServoController servo2;
