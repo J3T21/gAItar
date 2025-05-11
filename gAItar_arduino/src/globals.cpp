@@ -3,14 +3,14 @@
 Uart &dataUart = Serial1; // Define the UART interface for data transfer
 Uart &instructionUart = Serial4; // Define the UART interface for instructions
 SdFat sd;
-PwmServoController servo6(2, 150, 170);
-PwmServoController servo5(3, 150, 170);
-PwmServoController servo4(4, 150, 170);
-PwmServoController servo3(5, 150, 170);
-PwmServoController servo2(6, 150, 170);
-PwmServoController servo1(7, 150, 170);
+ServoController servo6(2, 78, 98);
+ServoController servo5(3, 75, 94);
+ServoController servo4(4, 82, 102);
+ServoController servo3(5, 81, 101);
+ServoController servo2(6, 83, 103);
+ServoController servo1(7, 79, 99);
 
-byte lh_state[NUM_FRETS] = {0}; // array to hold the state of the left hand
+byte fretStates[NUM_FRETS] = {0}; // array to hold the state of the left hand
 
 // Define your pin constants somewhere above this or use actual pin numbers
 const int fretPins[NUM_FRETS][3] = {

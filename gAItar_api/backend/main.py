@@ -1,6 +1,6 @@
 import uvicorn
 import mido
-from mido import Message, MidiFile, MidiTrack, bpm2tempo
+from mido import Message, MidiFile, MidiTrack, bpm2tempo, merge_tracks
 from pydantic import BaseModel
 from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,17 +26,15 @@ app.add_middleware(
 
 
 class guitarEvent(BaseModel):
-    time_ms: int
+    time: int
     string: int
     fret: int
-    status: Literal['on', 'off']
-
 class GuitarMidiEvents(BaseModel):
     title: str
     artist: str
     genre: str
     duration_formatted: str 
-    events: str # C-style array string representation probs will change
+    events: List[guitarEvent] # C-style array string representation probs will change
 #CORS middleware
 
 @app.get("/test-cors")
@@ -93,9 +91,9 @@ def strip_non_melodic_and_preserve_tempo(input_bytes: bytes) -> bytes:
     return out_bytes_io.getvalue()
 
 
-def process_midi_to_guitar_from_midi(midi_data, max_frets=12):
+def process_midi_to_guitar_from_midi(midi_data, max_frets=10):
     stripped_bytes = strip_non_melodic_and_preserve_tempo(midi_data)
-    mid = MidiFile(file=BytesIO(stripped_bytes))  # ← Reload cleaned version
+    mid = MidiFile(file=BytesIO(stripped_bytes))  # Reload cleaned version
     PPQ = mid.ticks_per_beat
     DEFAULT_TEMPO = 500000  # µs per quarter note
 
@@ -108,66 +106,50 @@ def process_midi_to_guitar_from_midi(midi_data, max_frets=12):
         1: 64   # E4
     }
 
-    # Store active notes per string to ensure a string isn't used for multiple notes simultaneously
+    # Store active notes per string
     active_notes = {s: None for s in STRING_OPEN_NOTES}
-
-    absolute_time = 0.0  # Start time for the first event
     events = []
     tempo = DEFAULT_TEMPO
+    current_time = 0.0
 
-    for track in mid.tracks:
-        time = 0.0
-        local_tempo = tempo
+    # Merge tracks to handle absolute timing correctly
+    merged = merge_tracks(mid.tracks)
 
-        for msg in track:
-            time += mido.tick2second(msg.time, PPQ, local_tempo)
+    for msg in merged:
+        current_time += mido.tick2second(msg.time, PPQ, tempo)
 
-            if msg.type == 'set_tempo':
-                local_tempo = msg.tempo
+        if msg.type == 'set_tempo':
+            tempo = msg.tempo
 
-            elif msg.type == 'note_on' and msg.velocity > 0 and msg.channel != 9:
-                note = msg.note
-                note_played = False  # Flag to track if the note was successfully played
+        elif msg.type == 'note_on' and msg.velocity > 0 and msg.channel != 9:
+            note = msg.note
+            note_played = False
 
-                for s in sorted(STRING_OPEN_NOTES.keys(), reverse=True):  # Start with lower strings first
-                    open_note = STRING_OPEN_NOTES[s]
-                    fret = note - open_note
-                    if 0 <= fret <= max_frets:
-                        # Check if the string is already in use (active note is mapped to it)
-                        if active_notes[s] is None:
-                            event_time_ms = round((absolute_time + time) * 1000)  # Absolute time in ms
-                            events.append((event_time_ms, s, fret, 'on'))
-                            active_notes[s] = note  # Mark the string as in use by this note
-                            note_played = True
-                            break  # Note played successfully, stop searching
-
-                if not note_played:
-                    # Skip the note if no string was available
-                    continue
-
-            elif (msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0)) and msg.channel != 9:
-                note = msg.note
-                for s in active_notes:
-                    if active_notes[s] == note:  # Find the string associated with the note
-                        event_time_ms = round((absolute_time + time) * 1000)  # Absolute time in ms
-                        events.append((event_time_ms, s, -1, 'off'))  # Note-off event
-                        active_notes[s] = None  # Release the string after note-off
+            for s in sorted(STRING_OPEN_NOTES.keys(), reverse=True):
+                open_note = STRING_OPEN_NOTES[s]
+                fret = note - open_note
+                if 0 <= fret <= max_frets:
+                    if active_notes[s] is None:
+                        event_time_ms = round(current_time * 1000)
+                        events.append({ "time": event_time_ms, "string": s, "fret": fret })
+                        active_notes[s] = note
+                        note_played = True
                         break
+            # If not played, silently skip
 
-    # Sort events by absolute time
-    events.sort()
-    duration_ms = events[-1][0] if events else 0  # Get the duration of the last event
+        elif (msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0)) and msg.channel != 9:
+            note = msg.note
+            for s in active_notes:
+                if active_notes[s] == note:
+                    event_time_ms = round(current_time * 1000)
+                    events.append({ "time": event_time_ms, "string": s, "fret": -1 })
+                    active_notes[s] = None
+                    break
+
+    # Sort events just in case
+    events.sort(key=lambda e: e["time"])
+    duration_ms = events[-1]["time"] if events else 0
     duration_minutes, duration_seconds = divmod(duration_ms // 1000, 60)
     duration_formatted = f"{duration_minutes}:{duration_seconds:02}"
-    output = []
-    for t, s, f, status in events:
-        output.append((t, s, f, status))
 
-    # Format the output as a C-style array
-    event_string = "const int events[][3] = {\n"
-    for absolute_time, string, fret, status in output:
-        event_string += f"    {{{absolute_time}, {string}, {fret}}},\n"
-    event_string = event_string.rstrip(",\n")  # Remove last comma
-    event_string += "\n};"
-    return {"duration" : duration_formatted, "events": event_string}
-
+    return { "duration": duration_formatted, "events": events }

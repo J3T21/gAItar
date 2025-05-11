@@ -20,6 +20,8 @@ void shiftLSB(int dataPin, int clkPin, uint8_t pattern) {
 void clearInactiveFrets(int fretActive) {
     for (int i = 0; i < NUM_FRETS; i++) {
         if (i != fretActive) {
+            // digitalWrite(fretPins[i][2], LOW); // Set clear pin high to enable the shift register
+            // shiftOut(fretPins[i][1], fretPins[i][0], LSBFIRST, 0); // Clear inactive frets
             digitalWrite(fretPins[i][2], LOW); // Set clear pin low to disable the shift register
         }
     }
@@ -35,4 +37,8 @@ void instantPress(int fretIndex, int stringIndex, int hold_ms) {
     delay(hold_ms);                // Hold the solenoid
 
     shiftLSB(data, clk, 0);        // Turn solenoid OFF
+}
+
+void clearString(int stringIndex){
+    for (int i = 0; i<NUM_FRETS; i++){}
 }

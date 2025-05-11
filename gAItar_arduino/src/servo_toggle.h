@@ -10,12 +10,14 @@ class ServoController {
         Servo servo;         // Servo object from the Servo library
         int positionA;       // Initial position
         int positionB;       // Target position
+        int positionDamper; // Damping position
         int currentPosition; // Current position of the servo
         bool movingToB;      // Flag to toggle between positions
     
     public:
         ServoController(int pin, int posA, int posB); // Constructor
         void move(int delayMs = 0); // Method to move the servo
+        void damper();
 };
 
 class PwmServoController {

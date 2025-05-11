@@ -17,9 +17,6 @@ void setup() {
     Serial.begin(115200); // Initialize serial communication or debugging
     dataUart.begin(BAUDRATE); // Initialize dataUart for UART communication
     instructionUart.begin(BAUDRATE); //intialize instructionUart for UART communication
-    while (!Serial) {
-        ; // Wait for serial port to connect. Needed for native USB port only
-    }
     for (int i = 0; i < NUM_FRETS; i++)
     {
         pinMode(fretPins[i][0], OUTPUT); // Set clock pin as output
@@ -41,4 +38,10 @@ void setup() {
 void loop() {
   fileReceiver_state(dataUart); // Call the file receiver function to handle incoming data
   instructionReceiver(instructionUart); // Call the instruction receiver function to handle incoming instructions
+  //testSerialControlservo();
+  //testFret(1, 500, 10); // Test the fret function with a range of frets
+  //testSerialControlservo();
+
+  //playGuitarEventsOpen();
+  playGuitarFromFile("/Classical/Mozart/Twinkle_Twinkle_Little_Star.json");
 }

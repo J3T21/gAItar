@@ -1,10 +1,11 @@
 import mido
 import struct
-from mido import Message, MidiFile, MidiTrack, bpm2tempo
+from mido import Message, MidiFile, MidiTrack, bpm2tempo, merge_tracks
 import serial
 import struct
 import time
 import pyperclip
+from io import BytesIO
 
 
 def extract_global_meta_messages(mid):
@@ -12,9 +13,7 @@ def extract_global_meta_messages(mid):
     meta_track = mido.MidiTrack()
 
     for track in mid.tracks:
-        time_counter = 0
         for msg in track:
-            time_counter += msg.time
             if msg.is_meta and msg.type in ['set_tempo', 'time_signature', 'key_signature']:
                 meta_copy = msg.copy(time=msg.time)
                 meta_track.append(meta_copy)
@@ -30,9 +29,9 @@ def is_melodic_track(track):
             return True
     return False  # No notes at all
 
-def strip_non_melodic_and_preserve_tempo(input_file, output_file):
-    mid = mido.MidiFile(input_file)
-    new_mid = mido.MidiFile(ticks_per_beat=mid.ticks_per_beat)
+def strip_non_melodic_and_preserve_tempo(input_bytes:bytes)->bytes:
+    mid = MidiFile(file=BytesIO(input_bytes))  # Parse the bytes here
+    new_mid = MidiFile(ticks_per_beat=mid.ticks_per_beat)
 
     # Extract and add global meta messages
     meta_track = extract_global_meta_messages(mid)
@@ -41,12 +40,13 @@ def strip_non_melodic_and_preserve_tempo(input_file, output_file):
     # Add only melodic tracks
     melodic_tracks = [track for track in mid.tracks if is_melodic_track(track)]
     new_mid.tracks.extend(melodic_tracks)
+    out_bytes_io = BytesIO()
+    new_mid.save(file=out_bytes_io)
+    return out_bytes_io.getvalue()  # Return the bytes of the new MIDI file
 
-    new_mid.save(output_file)
-    print(f"🎵 Saved: {output_file} (melodic-only with preserved tempo changes)")
-
-def process_midi_to_guitar_from_midi(file_path, max_frets=12):
-    mid = mido.MidiFile(file_path)
+def process_midi_to_guitar_from_midi(midi_data, max_frets=10):
+    stripped_bytes = strip_non_melodic_and_preserve_tempo(midi_data)
+    mid = MidiFile(file=BytesIO(stripped_bytes))  # Reload cleaned version
     PPQ = mid.ticks_per_beat
     DEFAULT_TEMPO = 500000  # µs per quarter note
 
@@ -59,66 +59,127 @@ def process_midi_to_guitar_from_midi(file_path, max_frets=12):
         1: 64   # E4
     }
 
-    # Store active notes per string to ensure a string isn't used for multiple notes simultaneously
+    # Store active notes per string
     active_notes = {s: None for s in STRING_OPEN_NOTES}
-
-    absolute_time = 0.0  # Start time for the first event
     events = []
     tempo = DEFAULT_TEMPO
+    current_time = 0.0
 
-    for track in mid.tracks:
-        time = 0.0
-        local_tempo = tempo
+    # Merge tracks to handle absolute timing correctly
+    merged = merge_tracks(mid.tracks)
 
-        for msg in track:
-            time += mido.tick2second(msg.time, PPQ, local_tempo)
+    for msg in merged:
+        current_time += mido.tick2second(msg.time, PPQ, tempo)
 
-            if msg.type == 'set_tempo':
-                local_tempo = msg.tempo
+        if msg.type == 'set_tempo':
+            tempo = msg.tempo
 
-            elif msg.type == 'note_on' and msg.velocity > 0 and msg.channel != 9:
-                note = msg.note
-                note_played = False  # Flag to track if the note was successfully played
+        elif msg.type == 'note_on' and msg.velocity > 0 and msg.channel != 9:
+            note = msg.note
+            note_played = False
 
-                for s in sorted(STRING_OPEN_NOTES.keys(), reverse=True):  # Start with lower strings first
-                    open_note = STRING_OPEN_NOTES[s]
-                    fret = note - open_note
-                    if 0 <= fret <= max_frets:
-                        # Check if the string is already in use (active note is mapped to it)
-                        if active_notes[s] is None:
-                            event_time_ms = round((absolute_time + time) * 1000)  # Absolute time in ms
-                            events.append((event_time_ms, s, fret, 'on'))
-                            active_notes[s] = note  # Mark the string as in use by this note
-                            note_played = True
-                            break  # Note played successfully, stop searching
-
-                if not note_played:
-                    # Skip the note if no string was available
-                    continue
-
-            elif (msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0)) and msg.channel != 9:
-                note = msg.note
-                for s in active_notes:
-                    if active_notes[s] == note:  # Find the string associated with the note
-                        event_time_ms = round((absolute_time + time) * 1000)  # Absolute time in ms
-                        events.append((event_time_ms, s, -1, 'off'))  # Note-off event
-                        active_notes[s] = None  # Release the string after note-off
+            for s in sorted(STRING_OPEN_NOTES.keys(), reverse=True):
+                open_note = STRING_OPEN_NOTES[s]
+                fret = note - open_note
+                if 0 <= fret <= max_frets:
+                    if active_notes[s] is None:
+                        event_time_ms = round(current_time * 1000)
+                        events.append((event_time_ms, s, fret, 'on'))
+                        active_notes[s] = note
+                        note_played = True
                         break
+            # If not played, silently skip
 
-    # Sort events by absolute time
+        elif (msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0)) and msg.channel != 9:
+            note = msg.note
+            for s in active_notes:
+                if active_notes[s] == note:
+                    event_time_ms = round(current_time * 1000)
+                    events.append((event_time_ms, s, -1, 'off'))
+                    active_notes[s] = None
+                    break
+
+    # Sort events just in case
     events.sort()
-    output = []
-    for t, s, f, status in events:
-        output.append((t, s, f, status))
+    duration_ms = events[-1][0] if events else 0
+    duration_minutes, duration_seconds = divmod(duration_ms // 1000, 60)
+    duration_formatted = f"{duration_minutes}:{duration_seconds:02}"
 
-    # Format the output as a C-style array
+    # Format output as C-style array
     event_string = "const int events[][3] = {\n"
-    for absolute_time, string, fret, status in output:
+    for absolute_time, string, fret, status in events:
         event_string += f"    {{{absolute_time}, {string}, {fret}}},\n"
-    event_string = event_string.rstrip(",\n")  # Remove last comma
-    event_string += "\n};"
+    event_string = event_string.rstrip(",\n") + "\n};"
+
     pyperclip.copy(event_string)
-    return event_string
+
+    return {"duration": duration_formatted, "events": events}
+
+def process_midi_to_guitar_from_midi_json(midi_data, max_frets=10):
+    stripped_bytes = strip_non_melodic_and_preserve_tempo(midi_data)
+    mid = MidiFile(file=BytesIO(stripped_bytes))  # Reload cleaned version
+    PPQ = mid.ticks_per_beat
+    DEFAULT_TEMPO = 500000  # µs per quarter note
+
+    STRING_OPEN_NOTES = {
+        6: 40,  # E2
+        5: 45,  # A2
+        4: 50,  # D3
+        3: 55,  # G3
+        2: 59,  # B3
+        1: 64   # E4
+    }
+
+    # Store active notes per string
+    active_notes = {s: None for s in STRING_OPEN_NOTES}
+    events = []
+    tempo = DEFAULT_TEMPO
+    current_time = 0.0
+
+    # Merge tracks to handle absolute timing correctly
+    merged = merge_tracks(mid.tracks)
+
+    for msg in merged:
+        current_time += mido.tick2second(msg.time, PPQ, tempo)
+
+        if msg.type == 'set_tempo':
+            tempo = msg.tempo
+
+        elif msg.type == 'note_on' and msg.velocity > 0 and msg.channel != 9:
+            note = msg.note
+            note_played = False
+
+            for s in sorted(STRING_OPEN_NOTES.keys(), reverse=True):
+                open_note = STRING_OPEN_NOTES[s]
+                fret = note - open_note
+                if 0 <= fret <= max_frets:
+                    if active_notes[s] is None:
+                        event_time_ms = round(current_time * 1000)
+                        events.append({ "time": event_time_ms, "string": s, "fret": fret })
+                        active_notes[s] = note
+                        note_played = True
+                        break
+            # If not played, silently skip
+
+        elif (msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0)) and msg.channel != 9:
+            note = msg.note
+            for s in active_notes:
+                if active_notes[s] == note:
+                    event_time_ms = round(current_time * 1000)
+                    events.append({ "time": event_time_ms, "string": s, "fret": -1 })
+                    active_notes[s] = None
+                    break
+
+    # Sort events just in case
+    events.sort(key=lambda e: e["time"])
+    duration_ms = events[-1]["time"] if events else 0
+    duration_minutes, duration_seconds = divmod(duration_ms // 1000, 60)
+    duration_formatted = f"{duration_minutes}:{duration_seconds:02}"
+
+    pyperclip.copy(events)
+
+    return { "duration": duration_formatted, "events": events }
+
 
 
 
@@ -216,10 +277,8 @@ def guitar_commands_to_midi(guitar_commands, output_file, tempo_bpm=120, default
 
 
 if __name__ == "__main__":
-    input_file = "midi_tracks/Bach_P.mid"
-    output_file = "midi_tracks/processed.mid"
-    strip_non_melodic_and_preserve_tempo(input_file, output_file)
-
-    guitar_commands = process_midi_to_guitar_from_midi(output_file, max_frets=10)
-    print("Guitar commands:", guitar_commands)
-
+    input_file = "midi_tracks/twinkle-twinkle-little-star.mid"
+    with open(input_file, "rb") as f:
+        contents = f.read()
+    ir = process_midi_to_guitar_from_midi(contents)
+    print(ir["duration"])

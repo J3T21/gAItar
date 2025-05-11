@@ -2,7 +2,7 @@
 
 // Constructor to initialize positions and attach the servo
 ServoController::ServoController(int pin, int posA, int posB)
-    : positionA(posA), positionB(posB), currentPosition(posA), movingToB(true) {
+    : positionA(posA), positionB(posB), positionDamper((posA+posB+1)/2), currentPosition(posA), movingToB(true) {
     servo.attach(pin); // Attach the servo to the specified pin
     servo.write(positionA); // Set initial position
 }
@@ -28,7 +28,11 @@ void ServoController::move(int delayMs) {
     movingToB = !movingToB; // Toggle the direction
 }
 
-
+void ServoController::damper() {
+    // Move to the damper position
+    servo.write(positionDamper);
+    currentPosition = positionDamper;
+}
 
 
 PwmServoController::PwmServoController(int pwmPin, int posA, int posB, int minPulseMicros, int maxPulseMicros)

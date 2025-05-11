@@ -26,7 +26,7 @@ void testFret(int start_fret, int timeHold, int stop_Fret){
 
 void testCombined(int start_fret, int timeHold){
     // make array of servo objects
-    PwmServoController servos[] = {servo1, servo2, servo3, servo4, servo5, servo6};
+    ServoController servos[] = {servo1, servo2, servo3, servo4, servo5, servo6};
     for (int i = start_fret - 1 ; i < NUM_FRETS; i++){
         int clkPin = fretPins[i][0];
         int dataPin = fretPins[i][1];
