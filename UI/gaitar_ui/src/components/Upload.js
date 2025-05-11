@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { backend_api, esp32 } from '../api'; // Import the API instance
 
-const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, addArtist }) => {
+const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, setSongs }) => {
   const [file, setFile] = useState(null);
   const [genre, setGenre] = useState('');
   const [title, setTitle] = useState('');
@@ -40,7 +40,6 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, addArti
         // Process the response
         if (response.data) {
           // Update track metadata in App component
-          
           setTrackMetadata({
             title: response.data.title,
             artist: response.data.artist,
@@ -49,6 +48,8 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, addArti
           });
 
           console.log('Track metadata:', response.data);
+
+          // Prepare data for ESP32 transmission
           const json = JSON.stringify(response.data);
           console.log("JSON size (bytes):", new TextEncoder().encode(json).length);
           const sanitizedTitle = response.data.title.replace(/\s+/g, '_');
@@ -61,18 +62,39 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, addArti
           espData.append('data', file); // the JSON file
           espData.append('title', sanitizedTitle);
           espData.append('artist', sanitizedArtist);
-          espData.append('genre', sanitizedGenre);      
+          espData.append('genre', sanitizedGenre);
+
           try {
             await esp32.post('/upload', espData, {
               headers: {
                 'Content-Type': 'multipart/form-data',
-              },}); 
-            console.log('midi sent to ESP32 successfully');
+              },
+            });
+            console.log('MIDI sent to ESP32 successfully');
           } catch (espError) {
-            console.error('Failed to send midi to ESP32:', espError);
+            console.error('Failed to send MIDI to ESP32:', espError);
           }
-        
-          onUpload(response.data.title, genre); // Pass title and genre
+
+          // Add the new song to the songs list
+          setSongs((prevSongs) => [
+            ...prevSongs,
+            {
+              title: response.data.title,
+              artist: response.data.artist,
+              genre: response.data.genre,
+            },
+          ]);
+
+          // Clear the input fields
+          setFile(null);
+          setGenre('');
+          setTitle('');
+          setArtist('');
+
+          console.log('Song added to the list:', response.data.title);
+
+          // Notify parent component about the upload
+          onUpload(response.data.title, genre);
         }
       } catch (error) {
         console.error('Error uploading MIDI file:', error);
@@ -84,41 +106,35 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, addArti
 
   // Handle adding a new genre
   const handleAddGenre = () => {
-    if (newGenre) {
-      // In the actual implementation, you would need to update the genre list in your app
-      // For example, calling a function like `addGenre(newGenre)`
-      console.log('Adding new genre:', newGenre);
-      setNewGenre('');
+    if (newGenre.trim() !== '') {
+      setSongs((prevSongs) => {
+        // Check if the genre already exists
+        const genreExists = prevSongs.some((song) => song.genre === newGenre);
+        if (!genreExists) {
+          // Add a dummy song with the new genre to update the genre list
+          return [...prevSongs, { title: '', artist: '', genre: newGenre }];
+        }
+        return prevSongs;
+      });
+      setNewGenre(''); // Clear the input field
     }
   };
 
   // Handle adding a new artist
   const handleAddArtist = () => {
-    if (newArtist) {
-      addArtist(newArtist);  // Assuming addArtist is passed as a prop to update artist list
-      console.log('Adding new artist:', newArtist);
-      setNewArtist('');
+    if (newArtist.trim() !== '') {
+      setSongs((prevSongs) => {
+        // Check if the artist already exists
+        const artistExists = prevSongs.some((song) => song.artist === newArtist);
+        if (!artistExists) {
+          // Add a dummy song with the new artist to update the artist list
+          return [...prevSongs, { title: '', artist: newArtist, genre: '' }];
+        }
+        return prevSongs;
+      });
+      setNewArtist(''); // Clear the input field
     }
   };
-
-  // Handle genre selection
-  const handleGenreSelect = (selectedGenre) => {
-    setGenre(selectedGenre);
-  };
-
-  // Handle artist selection
-  const handleArtistSelect = (selectedArtist) => {
-    setArtist(selectedArtist);
-  };
-
-  // Filter genres and artists based on search term
-  const filteredGenres = genres.filter((g) =>
-    g.name && g.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const filteredArtists = artists.filter((a) =>
-    a.name && a.name.toLowerCase().includes(artistSearchTerm.toLowerCase())
-  );
 
   return (
     <div>
@@ -145,7 +161,7 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, addArti
             list="artist-options"
           />
           <datalist id="artist-options">
-            {filteredArtists.map((artist, index) => (
+            {artists.map((artist, index) => (
               <option key={index} value={artist.name} />
             ))}
           </datalist>
@@ -172,7 +188,7 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, addArti
             list="genre-options"
           />
           <datalist id="genre-options">
-            {filteredGenres.map((genre, index) => (
+            {genres.map((genre, index) => (
               <option key={index} value={genre.name} />
             ))}
           </datalist>

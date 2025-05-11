@@ -55,7 +55,7 @@ body {
 }
 
 .middle-column {
-  max-width: 60%; /* Allow the middle column to take 50% of the width */
+  max-width: 60%; /* Allow the middle column to take 60% of the width */
 }
 
 .right-column {
@@ -68,7 +68,7 @@ body {
 
 /* Upload Column */
 .upload-column {
-  max-width: 25% ;
+  max-width: 25%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -149,10 +149,6 @@ body {
 }
 
 .upload-column button:hover {
-  background-color: #17a34a;
-}
-
-.upload-column .row button:hover {
   background-color: #17a34a;
 }
 
@@ -295,30 +291,29 @@ h3 {
 }
 
 /* Controls and Playlist */
-.controls, .playlist {
+.controls {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  background-color: #2a2a2a;
-  border-radius: 12px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  justify-content: space-evenly; /* Distribute buttons evenly across the row */
+  align-items: center; /* Align buttons vertically */
+  width: 100%; /* Ensure the controls span the full width */
+  margin-top: 20px; /* Add some margin above the controls */
 }
 
-.controls button, .playlist button {
-  width: 100%;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  border-radius: 8px;
+.control-button {
+  background-color: transparent;
   border: none;
-  padding: 12px;
-  background-color: #1db954;
-  color: white;
-  transition: background-color 0.3s ease;
+  color: #1db954; /* Spotify green */
+  font-size: 24px; /* Icon size */
+  cursor: pointer;
+  transition: color 0.3s ease;
 }
 
-.controls button:hover, .playlist button:hover {
-  background-color: #17a34a;
+.control-button:hover {
+  color: #17a34a; /* Darker green on hover */
+}
+
+.play-button {
+  font-size: 32px; /* Make the play button slightly larger */
 }
 
 .playback-info {
@@ -374,24 +369,6 @@ h3 {
   align-items: center;
   gap: 15px;
   margin-bottom: 10px;
-}
-
-.control-button {
-  background-color: transparent;
-  border: none;
-  color: #ffffff;
-  font-size: 24px;
-  cursor: pointer;
-  transition: transform 0.2s ease, color 0.2s ease;
-}
-
-.control-button:hover {
-  transform: scale(1.2);
-  color: #1db954;
-}
-
-.play-button {
-  font-size: 32px;
 }
 
 /* Scrubber */

@@ -4,7 +4,6 @@ import Playlist from './components/Playlist';
 import Controls from './components/Controls';
 import PlaybackInfo from './components/PlaybackInfo';
 import Upload from './components/Upload';
-import { FaPlay, FaPause, FaStepForward, FaStepBackward, FaRandom } from 'react-icons/fa';
 
 const App = () => {
   const [songs, setSongs] = useState([
@@ -23,8 +22,7 @@ const App = () => {
   const [dropdownActive, setDropdownActive] = useState(false);
   const [currentPlaylist, setCurrentPlaylist] = useState([]);
   const [currentTrack, setCurrentTrack] = useState(null);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [totalDuration, setTotalDuration] = useState(240); // Example total duration in seconds
+  const [isPlaying, setIsPlaying] = useState(false); // New state to track play/pause
 
   const uniqueArtists = [...new Set(songs.map(song => song.artist))].sort();
   const uniqueGenres = [...new Set(songs.map(song => song.genre))].sort();
@@ -75,8 +73,10 @@ const App = () => {
   };
 
   const handleSuggestionClick = (suggestion) => {
-    setQuery(suggestion.title);
-    setDropdownActive(false);
+    setQuery(suggestion.title); // Set the search bar value
+    setCurrentTrack(suggestion); // Set the current track to the selected suggestion
+    setIsPlaying(false); // Default to paused when a new track is selected
+    setDropdownActive(false); // Hide the dropdown
   };
 
   const handleAddToPlaylist = () => {
@@ -105,11 +105,6 @@ const App = () => {
     // Add the uploaded track to the playlist or update the UI as needed
   };
 
-  const addArtist = (newArtist) => {
-    console.log(`New artist added: ${newArtist}`);
-    // Add the new artist to the list of artists
-  };
-
   const setTrackMetadata = (metadata) => {
     console.log('Track metadata updated:', metadata);
     // Handle track metadata updates
@@ -120,22 +115,6 @@ const App = () => {
     if (!e.relatedTarget || !e.relatedTarget.classList.contains('suggestion-item')) {
       setTimeout(() => setDropdownActive(false), 200); // Delay hiding the dropdown
     }
-  };
-
-  const handlePlay = () => {
-    console.log('Play button clicked');
-  };
-
-  const handlePause = () => {
-    console.log('Pause button clicked');
-  };
-
-  const handleSkip = () => {
-    console.log('Skip button clicked');
-  };
-
-  const handleShuffle = () => {
-    console.log('Shuffle button clicked');
   };
 
   const formatTime = (time) => {
@@ -212,41 +191,20 @@ const App = () => {
 
         <div className="middle-column">
           <div className="current-track">
-            <h3>{currentTrack ? `Now Playing: ${currentTrack.title}` : 'No Track Playing'}</h3>
+            <h3>
+              {currentTrack
+                ? isPlaying
+                  ? `Now Playing: ${currentTrack.title}`
+                  : `Paused: ${currentTrack.title}`
+                : 'No Track Playing'}
+            </h3>
           </div>
-          <div className="controls">
-            <div className="player-controls">
-              <button onClick={handleShuffle} className="control-button">
-                <FaRandom />
-              </button>
-              <button onClick={handleSkip} className="control-button">
-                <FaStepBackward />
-              </button>
-              <button onClick={handlePlay} className="control-button play-button">
-                <FaPlay />
-              </button>
-              <button onClick={handlePause} className="control-button">
-                <FaPause />
-              </button>
-              <button onClick={handleSkip} className="control-button">
-                <FaStepForward />
-              </button>
-            </div>
-            <div className="scrubber">
-              <span className="time">{formatTime(currentTime)}</span>
-              <input
-                type="range"
-                min="0"
-                max={totalDuration}
-                value={currentTime}
-                onChange={(e) => setCurrentTime(Number(e.target.value))}
-                className="scrubber-bar"
-              />
-              <span className="time">{formatTime(totalDuration)}</span>
-            </div>
-          </div>
-
-          <PlaybackInfo currentTrack={currentTrack} />
+          <Controls
+            currentTrack={currentTrack}
+            setCurrentTrack={setCurrentTrack}
+            currentPlaylist={currentPlaylist}
+            setIsPlaying={setIsPlaying}
+          />
         </div>
 
         <div className="right-column">
@@ -262,7 +220,7 @@ const App = () => {
             artists={uniqueArtists}
             setTrackMetadata={setTrackMetadata}
             onUpload={handleUpload}
-            addArtist={addArtist}
+            setSongs={setSongs} // Pass setSongs to allow updates to the artist and genre lists
           />
         </div>
       </div>

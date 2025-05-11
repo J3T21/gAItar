@@ -1,5 +1,7 @@
 #include "uart.h"
+#include "translate.h"
 #include <SPI.h>
+#include <ArduinoJson.h>
 #include "globals.h"
 
 void fileReceiver(Uart &fileUart) {
@@ -143,6 +145,68 @@ void fileReceiver_chunk(Uart &fileUart) {
       }
     }
   }
+
+  const char* findFile(const String& title, const String& artist, const String& genre) {
+    static char matchingFilePath[128]; // Static buffer to store the matching file path
+    String directoryPath = "/" + genre + "/" + artist; // Construct the directory path
+
+    SdFile directory;
+    SdFile entry;
+
+    // Open the directory corresponding to the genre and artist
+    if (!directory.open(directoryPath.c_str())) {
+        Serial.print("Failed to open directory: ");
+        Serial.println(directoryPath);
+        return nullptr;
+    }
+
+    // Iterate through the files in the directory
+    while (entry.openNext(&directory, O_RDONLY)) {
+        char name[64];
+        entry.getName(name, sizeof(name));
+
+        // Skip directories
+        if (entry.isDir()) {
+            entry.close();
+            continue;
+        }
+
+        // Open the file and parse its metadata
+        File file = sd.open((directoryPath + "/" + name).c_str(), FILE_READ);
+        if (!file) {
+            Serial.print("Failed to open file: ");
+            Serial.println(name);
+            entry.close();
+            continue;
+        }
+
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, file);
+        file.close();
+
+        if (error) {
+            Serial.print("Failed to parse JSON in file: ");
+            Serial.println(name);
+            entry.close();
+            continue;
+        }
+
+        // Check if metadata matches
+        if (String(doc["title"].as<const char*>()) == title) {
+            String fullPath = directoryPath + "/" + name;
+            strncpy(matchingFilePath, fullPath.c_str(), sizeof(matchingFilePath) - 1);
+            matchingFilePath[sizeof(matchingFilePath) - 1] = '\0'; // Ensure null-termination
+            entry.close();
+            directory.close();
+            return matchingFilePath; // Return the matching file path
+        }
+
+        entry.close();
+    }
+
+    directory.close();
+    return nullptr; // Return nullptr if no match is found
+}
   
 
 void instructionReceiver(Uart &instrUart) {
@@ -186,7 +250,33 @@ void instructionReceiver(Uart &instrUart) {
                         Serial.write(buffer[i]);  // Print as characters (if ASCII)
                     }
                     Serial.println();
+                    JsonDocument doc;
+                    DeserializationError error = deserializeJson(doc, buffer, length);
+                    if (error) {
+                        Serial.println("Failed to parse command JSON");
+                        state = WAIT_FOR_HEADER;
+                        return;
+                    }
 
+                    // Extract metadata fields
+                    String command = doc["command"];
+                    if (command == "Play") {
+                        String title = doc["title"];
+                        String artist = doc["artist"];
+                        String genre = doc["genre"];
+
+                        // Find the file on the SD card
+                        const char* filePath = findFile(title, artist, genre);
+                        if (filePath) {
+                            Serial.print("Found file: ");
+                            Serial.println(filePath);
+
+                            // Play the file
+                            playGuitarFromFile(filePath);
+                        } else {
+                            Serial.println("File not found with matching metadata");
+                        }
+                    }
                     // Reset for next message
                     state = WAIT_FOR_HEADER;
                 }
@@ -195,7 +285,89 @@ void instructionReceiver(Uart &instrUart) {
     }
 }
 
+void instructionReceiverJson(Uart &instrUart) {
+    static enum { WAIT_FOR_HEADER, WAIT_FOR_LENGTH, WAIT_FOR_PAYLOAD } state = WAIT_FOR_HEADER;
+    static uint8_t length = 0;
+    static uint8_t receivedBytes = 0;
+    static uint8_t buffer[256];
 
+    while (instrUart.available() > 0) {
+        uint8_t incomingByte = instrUart.read();
+
+        switch (state) {
+            case WAIT_FOR_HEADER:
+                if (incomingByte == 0xAA) {
+                    state = WAIT_FOR_LENGTH;
+                    length = 0;
+                    receivedBytes = 0;
+                    Serial.println("Start byte received");
+                }
+                break;
+
+            case WAIT_FOR_LENGTH:
+                if (incomingByte > 0 && incomingByte <= sizeof(buffer)) {
+                    length = incomingByte;
+                    receivedBytes = 0;
+                    state = WAIT_FOR_PAYLOAD;
+                    Serial.print("Payload length: ");
+                    Serial.println(length);
+                } else {
+                    Serial.println("Invalid length, resetting");
+                    state = WAIT_FOR_HEADER;
+                }
+                break;
+
+            case WAIT_FOR_PAYLOAD:
+                buffer[receivedBytes++] = incomingByte;
+                if (receivedBytes == length) {
+                    // Full command received
+                    buffer[length] = '\0'; // Null-terminate the buffer
+                    Serial.print("Received command: ");
+                    Serial.println((char*)buffer);
+
+                    // Check if the buffer starts with "[Play]"
+                    if (strncmp((char*)buffer, "[Play]", 6) == 0) {
+                        // Strip "[Play]" and extract the JSON part
+                        const char* jsonPart = (char*)buffer + 6;
+
+                        // Parse the JSON
+                        JsonDocument doc;
+                        DeserializationError error = deserializeJson(doc, jsonPart);
+                        if (error) {
+                            Serial.println("Failed to parse command JSON");
+                            Serial.print("Error: ");
+                            Serial.println(error.c_str());
+                            state = WAIT_FOR_HEADER;
+                            return;
+                        }
+
+                        // Extract metadata fields
+                        String title = doc["title"];
+                        String artist = doc["artist"];
+                        String genre = doc["genre"];
+
+                        // Find the file on the SD card
+                        const char* filePath = findFile(title, artist, genre);
+                        if (filePath) {
+                            Serial.print("Found file: ");
+                            Serial.println(filePath);
+
+                            // Play the file
+                            playGuitarFromFile(filePath);
+                        } else {
+                            Serial.println("File not found with matching metadata");
+                        }
+                    } else {
+                        Serial.println("Invalid command prefix");
+                    }
+
+                    // Reset for next message
+                    state = WAIT_FOR_HEADER;
+                }
+                break;
+        }
+    }
+}
 
 bool createDirectories(String fullPath) {
     // Remove the file name (keep only directories)
@@ -381,3 +553,4 @@ void fileReceiver_state(Uart &fileUart){
             break;
     }   
 }
+

@@ -37,11 +37,11 @@ void setup() {
 
 void loop() {
   fileReceiver_state(dataUart); // Call the file receiver function to handle incoming data
-  instructionReceiver(instructionUart); // Call the instruction receiver function to handle incoming instructions
+  instructionReceiverJson(instructionUart); // Call the instruction receiver function to handle incoming instructions
   //testSerialControlservo();
   //testFret(1, 500, 10); // Test the fret function with a range of frets
   //testSerialControlservo();
 
   //playGuitarEventsOpen();
-  playGuitarFromFile("/Classical/Mozart/Twinkle_Twinkle_Little_Star.json");
+  //playGuitarFromFile("/Classical/Mozart/Twinkle_Twinkle_Little_Star.json");
 }
