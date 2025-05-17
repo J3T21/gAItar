@@ -34,5 +34,3 @@ const byte stringOrder[6] = {
     string5, // A
     string6  // Low E
 };
-
-//const size_t eventCount = sizeof(events) / sizeof(events[0]);

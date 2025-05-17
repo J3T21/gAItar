@@ -1,11 +1,23 @@
 #include "translate.h"
 #include <ArduinoJson.h>
 #include <SdFat.h>
-
+#include <FreeRTOS_SAMD51.h>
 unsigned long currentTime = 0;
 unsigned long lastUpdateTime = 0;
 
 NoteState noteStates[6];  // One per string
+
+uint16_t eventCount = 0; // Number of events deprecated
+int events[0][3] = {};
+
+extern volatile bool isPlaying;
+extern volatile bool isPaused;
+extern volatile bool newSongRequested;
+extern String currentSongPath;
+extern size_t currentEventIndex;
+extern unsigned long startTime;
+extern unsigned long pauseOffset;
+
 
 void playGuitarEvents() {
     static unsigned long startTime = millis(); // Record the start time
@@ -185,6 +197,16 @@ void playFrets() {
                 }
 
                 int fretIndex = fret - 1; // Adjust for 0-based indexing
+                bool alreadyHeld = false;
+
+                switch (string) {
+                    case 1: alreadyHeld = (fretStates[fretIndex] & string1); break;
+                    case 2: alreadyHeld = (fretStates[fretIndex] & string2); break;
+                    case 3: alreadyHeld = (fretStates[fretIndex] & string3); break;
+                    case 4: alreadyHeld = (fretStates[fretIndex] & string4); break;
+                    case 5: alreadyHeld = (fretStates[fretIndex] & string5); break;
+                    case 6: alreadyHeld = (fretStates[fretIndex] & string6); break;
+                }
 
                 // Use the predefined string constants to set the correct bit
                 switch (string) {
@@ -520,5 +542,161 @@ void playGuitarFromFile(const char* filePath){
             // If it's not time for the current event, exit the loop
             break;
         }
+    }
+}
+
+void playGuitarRTOS(const char* filePath) {
+    static File file;
+    static JsonDocument doc;
+    static JsonArray events;
+    static bool fileLoaded = false;
+
+    if (!isPlaying || isPaused) {
+        // If not playing or paused, cleanup and return
+        if (fileLoaded && file) {
+            file.close();
+            fileLoaded = false;
+        }
+        clearAllFrets();
+        return;
+    }
+
+    // Only load the file and parse JSON once per song
+    if (!fileLoaded) {
+        file = sd.open(currentSongPath.c_str(), FILE_READ);
+        if (!file) {
+            Serial.println("Failed to open file for reading");
+            isPlaying = false;
+            return;
+        }
+        DeserializationError error = deserializeJson(doc, file);
+        file.close();
+        if (error) {
+            Serial.print("Failed to parse JSON: ");
+            Serial.println(error.c_str());
+            isPlaying = false;
+            fileLoaded = false;
+            return;
+        }
+        events = doc["events"];
+        fileLoaded = true;
+        if (newSongRequested){
+            currentEventIndex = 0;
+            startTime = millis();
+            pauseOffset = 0;
+            newSongRequested = false; 
+        }
+    }
+
+    // Play events incrementally
+    if (currentEventIndex < events.size()) {
+        JsonObject event = events[currentEventIndex];
+        unsigned long eventTime = event["time"];
+        int string = event["string"];
+        int fret = event["fret"];
+
+        if (millis() - startTime >= eventTime) {
+            // --- Handle the event (same as your playGuitarFromFile logic) ---
+            if (fret == -1) {
+                switch (string) {
+                    case 1: servo1.damper(); break;
+                    case 2: servo2.damper(); break;
+                    case 3: servo3.damper(); break;
+                    case 4: servo4.damper(); break;
+                    case 5: servo5.damper(); break;
+                    case 6: servo6.damper(); break;
+                    default: Serial.println("Invalid string number!"); break;
+                }
+                for (int f = 0; f < NUM_FRETS; f++) {
+                    switch (string) {
+                        case 1: fretStates[f] &= ~string1; break;
+                        case 2: fretStates[f] &= ~string2; break;
+                        case 3: fretStates[f] &= ~string3; break;
+                        case 4: fretStates[f] &= ~string4; break;
+                        case 5: fretStates[f] &= ~string5; break;
+                        case 6: fretStates[f] &= ~string6; break;
+                    }
+                    int clkPin = fretPins[f][0];
+                    int dataPin = fretPins[f][1];
+                    int clearPin = fretPins[f][2];
+                    digitalWrite(clearPin, HIGH);
+                    shiftOut(dataPin, clkPin, LSBFIRST, fretStates[f]);
+                }
+            } else if (fret == 0) {
+                switch (string) {
+                    case 1: servo1.move(0); break;
+                    case 2: servo2.move(0); break;
+                    case 3: servo3.move(0); break;
+                    case 4: servo4.move(0); break;
+                    case 5: servo5.move(0); break;
+                    case 6: servo6.move(0); break;
+                    default: Serial.println("Invalid string number!"); break;
+                }
+                for (int f = 0; f < NUM_FRETS; f++) {
+                    switch (string) {
+                        case 1: fretStates[f] &= ~string1; break;
+                        case 2: fretStates[f] &= ~string2; break;
+                        case 3: fretStates[f] &= ~string3; break;
+                        case 4: fretStates[f] &= ~string4; break;
+                        case 5: fretStates[f] &= ~string5; break;
+                        case 6: fretStates[f] &= ~string6; break;
+                    }
+                    int clkPin = fretPins[f][0];
+                    int dataPin = fretPins[f][1];
+                    int clearPin = fretPins[f][2];
+                    digitalWrite(clearPin, HIGH);
+                    shiftOut(dataPin, clkPin, LSBFIRST, fretStates[f]);
+                }
+            } else {
+                if (fret < 1 || fret > NUM_FRETS) {
+                    Serial.println("Invalid fret number!");
+                    isPlaying = false;
+                    fileLoaded = false;
+                    return;
+                }
+                switch (string) {
+                    case 1: servo1.move(0); break;
+                    case 2: servo2.move(0); break;
+                    case 3: servo3.move(0); break;
+                    case 4: servo4.move(0); break;
+                    case 5: servo5.move(0); break;
+                    case 6: servo6.move(0); break;
+                    default: Serial.println("Invalid string number!"); break;
+                }
+                int fretIndex = fret - 1;
+                bool alreadyHeld = false;
+                switch (string) {
+                    case 1: alreadyHeld = (fretStates[fretIndex] & string1); break;
+                    case 2: alreadyHeld = (fretStates[fretIndex] & string2); break;
+                    case 3: alreadyHeld = (fretStates[fretIndex] & string3); break;
+                    case 4: alreadyHeld = (fretStates[fretIndex] & string4); break;
+                    case 5: alreadyHeld = (fretStates[fretIndex] & string5); break;
+                    case 6: alreadyHeld = (fretStates[fretIndex] & string6); break;
+                }
+                if (!alreadyHeld){
+                    switch (string) {
+                        case 1: fretStates[fretIndex] |= string1; break;
+                        case 2: fretStates[fretIndex] |= string2; break;
+                        case 3: fretStates[fretIndex] |= string3; break;
+                        case 4: fretStates[fretIndex] |= string4; break;
+                        case 5: fretStates[fretIndex] |= string5; break;
+                        case 6: fretStates[fretIndex] |= string6; break;
+                    }
+                }
+                int clkPin = fretPins[fretIndex][0];
+                int dataPin = fretPins[fretIndex][1];
+                int clearPin = fretPins[fretIndex][2];
+                digitalWrite(clearPin, HIGH);
+                shiftOut(dataPin, clkPin, LSBFIRST, fretStates[fretIndex]);
+            }
+            currentEventIndex++;
+        }
+    } else {
+        // Song finished
+        currentSongPath = "";
+        isPlaying = false;
+        fileLoaded = false;
+        newSongRequested = true;
+        Serial.println("Playback finished.");
     }
 }

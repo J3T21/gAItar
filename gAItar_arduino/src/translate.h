@@ -12,6 +12,8 @@ void playGuitarEventsOpen();  // Function declaration
 
 void playGuitarFromFile(const char* filePath);
 
+void playGuitarRTOS(const char* filePath);
+
 void playFrets();
 
 // If needed elsewhere, also expose time and note state:

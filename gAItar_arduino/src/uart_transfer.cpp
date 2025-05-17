@@ -3,6 +3,16 @@
 #include <SPI.h>
 #include <ArduinoJson.h>
 #include "globals.h"
+#include <FreeRTOS_SAMD51.h>
+
+extern volatile bool isPlaying;
+extern volatile bool isPaused;
+extern volatile bool newSongRequested;
+extern String currentSongPath;
+extern size_t currentEventIndex;
+extern unsigned long startTime;
+extern unsigned long pauseOffset;
+extern SemaphoreHandle_t playbackSemaphore;
 
 void fileReceiver(Uart &fileUart) {
     static size_t fileSize = 0;
@@ -270,9 +280,6 @@ void instructionReceiver(Uart &instrUart) {
                         if (filePath) {
                             Serial.print("Found file: ");
                             Serial.println(filePath);
-
-                            // Play the file
-                            playGuitarFromFile(filePath);
                         } else {
                             Serial.println("File not found with matching metadata");
                         }
@@ -291,7 +298,7 @@ void instructionReceiverJson(Uart &instrUart) {
     static uint8_t receivedBytes = 0;
     static uint8_t buffer[256];
 
-    while (instrUart.available() > 0) {
+    if (instrUart.available()) {
         uint8_t incomingByte = instrUart.read();
 
         switch (state) {
@@ -326,40 +333,57 @@ void instructionReceiverJson(Uart &instrUart) {
                     Serial.println((char*)buffer);
 
                     // Check if the buffer starts with "[Play]"
-                    if (strncmp((char*)buffer, "[Play]", 6) == 0) {
-                        // Strip "[Play]" and extract the JSON part
-                        const char* jsonPart = (char*)buffer + 6;
+                    if (xSemaphoreTake(playbackSemaphore, portMAX_DELAY)){
+                        if (strncmp((char*)buffer, "[Play]", 6) == 0) {
+                            // Strip "[Play]" and extract the JSON part
+                            const char* jsonPart = (char*)buffer + 6;
+                            Serial.println("json part " + String(jsonPart));
 
-                        // Parse the JSON
-                        JsonDocument doc;
-                        DeserializationError error = deserializeJson(doc, jsonPart);
-                        if (error) {
-                            Serial.println("Failed to parse command JSON");
-                            Serial.print("Error: ");
-                            Serial.println(error.c_str());
-                            state = WAIT_FOR_HEADER;
-                            return;
-                        }
+                            // Parse the JSON
+                            JsonDocument doc;
+                            DeserializationError error = deserializeJson(doc, jsonPart);
+                            if (error) {
+                                Serial.println("Failed to parse command JSON");
+                                Serial.print("Error: ");
+                                Serial.println(error.c_str());
+                                state = WAIT_FOR_HEADER;
+                                return;
+                            }
 
-                        // Extract metadata fields
-                        String title = doc["title"];
-                        String artist = doc["artist"];
-                        String genre = doc["genre"];
+                            // Extract metadata fields
+                            String title = doc["title"];
+                            String artist = doc["artist"];
+                            String genre = doc["genre"];
 
                         // Find the file on the SD card
-                        const char* filePath = findFile(title, artist, genre);
-                        if (filePath) {
-                            Serial.print("Found file: ");
-                            Serial.println(filePath);
-
-                            // Play the file
-                            playGuitarFromFile(filePath);
-                        } else {
+                            const char* filePath = findFile(title, artist, genre);
+                            if (filePath) {
+                                Serial.print("Found file: ");
+                                Serial.println(filePath);
+                                if (currentSongPath != filePath){
+                                    currentSongPath = filePath;
+                                    newSongRequested = true;
+                                    isPlaying = true;
+                                    isPaused = false;
+                                } else if (isPaused)
+                                startTime = millis() - pauseOffset;
+                                isPlaying = true;
+                                isPaused = false;
+                            } 
+                         else {
                             Serial.println("File not found with matching metadata");
                         }
-                    } else {
+                    } else if (strncmp((char*)buffer, "Pause", 5)==0){
+                        isPaused = true;
+                        pauseOffset = millis() - startTime;
+                        Serial.println("Paused: isPaused true");
+                    }else {
                         Serial.println("Invalid command prefix");
                     }
+                    xSemaphoreGive(playbackSemaphore);
+                
+                    }
+           
 
                     // Reset for next message
                     state = WAIT_FOR_HEADER;
@@ -401,29 +425,40 @@ bool createDirectories(String fullPath) {
   }
   
 
+void listFilesRecursive(SdFile& dir, String path = "/") {
+    SdFile entry;
+    char name[64];
+
+    while (entry.openNext(&dir, O_RDONLY)) {
+        entry.getName(name, sizeof(name));
+        if (entry.isDir()) {
+            // Skip "." and ".." entries
+            if (strcmp(name, ".") != 0 && strcmp(name, "..") != 0) {
+                String subDirPath = path + name + "/";
+                listFilesRecursive(entry, subDirPath);
+            }
+        } else {
+            Serial.print(path);
+            Serial.print(name);
+            Serial.print(" - ");
+            Serial.print(entry.fileSize());
+            Serial.println(" bytes");
+        }
+        entry.close();
+    }
+}
+
 void listFilesOnSD() {
     SdFile root;
-    SdFile entry;
-
     if (!root.open("/")) {
         Serial.println("Failed to open root directory");
         return;
     }
-
     Serial.println("Files on SD card:");
-
-    while (entry.openNext(&root, O_RDONLY)) {
-        char name[64];
-        entry.getName(name, sizeof(name));
-        Serial.print(name);
-        Serial.print(" - ");
-        Serial.print(entry.fileSize());
-        Serial.println(" bytes");
-        entry.close();
-    }
-
+    listFilesRecursive(root, "/");
     root.close();
 }
+
 enum ReceiveState{
     PARSE_HEADER,
     OPEN_FILE,
