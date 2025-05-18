@@ -6,7 +6,7 @@
 #define INSTR_TX 23
 #define UPLOAD_RX 16
 #define UPLOAD_TX 17
-#define BAUDRATE 1000000
+#define BAUDRATE 115200
 
 extern HardwareSerial& instruction_uart;
 extern HardwareSerial& upload_uart;

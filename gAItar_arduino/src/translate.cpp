@@ -17,7 +17,8 @@ extern String currentSongPath;
 extern size_t currentEventIndex;
 extern unsigned long startTime;
 extern unsigned long pauseOffset;
-
+extern SemaphoreHandle_t playbackSemaphore;
+extern SemaphoreHandle_t sdSemaphore;
 
 void playGuitarEvents() {
     static unsigned long startTime = millis(); // Record the start time
@@ -563,28 +564,35 @@ void playGuitarRTOS(const char* filePath) {
 
     // Only load the file and parse JSON once per song
     if (!fileLoaded) {
-        file = sd.open(currentSongPath.c_str(), FILE_READ);
-        if (!file) {
-            Serial.println("Failed to open file for reading");
-            isPlaying = false;
+        if (xSemaphoreTake(sdSemaphore, portMAX_DELAY)){
+            file = sd.open(currentSongPath.c_str(), FILE_READ);
+            if (!file) {
+                xSemaphoreGive(sdSemaphore);
+                Serial.println("Failed to open file for reading");
+                isPlaying = false;
+                return;
+            }
+            DeserializationError error = deserializeJson(doc, file);
+            file.close();
+            xSemaphoreGive(sdSemaphore);
+            if (error) {
+                Serial.print("Failed to parse JSON: ");
+                Serial.println(error.c_str());
+                isPlaying = false;
+                fileLoaded = false;
+                return;
+            }
+            events = doc["events"];
+            fileLoaded = true;
+            if (newSongRequested){
+                currentEventIndex = 0;
+                startTime = millis();
+                pauseOffset = 0;
+                newSongRequested = false; 
+            }
+        }else {
+            Serial.println("Failed to take SD semaphore");
             return;
-        }
-        DeserializationError error = deserializeJson(doc, file);
-        file.close();
-        if (error) {
-            Serial.print("Failed to parse JSON: ");
-            Serial.println(error.c_str());
-            isPlaying = false;
-            fileLoaded = false;
-            return;
-        }
-        events = doc["events"];
-        fileLoaded = true;
-        if (newSongRequested){
-            currentEventIndex = 0;
-            startTime = millis();
-            pauseOffset = 0;
-            newSongRequested = false; 
         }
     }
 

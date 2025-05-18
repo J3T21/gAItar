@@ -23,6 +23,7 @@ const App = () => {
   const [currentPlaylist, setCurrentPlaylist] = useState([]);
   const [currentTrack, setCurrentTrack] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false); // New state to track play/pause
+  const [playlistError, setPlaylistError] = useState('');
 
   const uniqueArtists = [...new Set(songs.map(song => song.artist))].sort();
   const uniqueGenres = [...new Set(songs.map(song => song.genre))].sort();
@@ -97,6 +98,9 @@ const App = () => {
         return prevPlaylist;
       });
       setQuery(''); // Clear the search bar
+      setPlaylistError(''); // Clear any previous error
+    } else {
+      setPlaylistError('Song not recognized. Please select a valid song.');
     }
   };
 
@@ -156,6 +160,11 @@ const App = () => {
                 </ul>
               )}
             </div>
+            {playlistError && (
+              <div style={{ color: 'red', marginBottom: '10px' }}>
+                {playlistError}
+              </div>
+            )}
             <button
               onClick={handleAddToPlaylist}
               className="add-to-playlist-button"

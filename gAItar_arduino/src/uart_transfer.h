@@ -10,6 +10,8 @@ void fileReceiver_state(Uart &fileUart); // Function to receive files with state
 bool createDirectory(String fullPath); // Function to create directories on SD card
 void listFilesOnSD(); // Function to list files on SD card
 const char* findFile(const String& title, const String& artist, const String& genre); // Function to find a file on SD card
-void instructionReceiverJson(Uart &instrUart); // Function to receive instructions in JSON format over UART
+void instructionReceiverRTOS(Uart &instrUart); // Function to receive instructions in JSON format over UART
+void fileReceiverRTOS(Uart &fileUart); // Function to receive files over UART with RTOS
+const char* findFileRTOS(const String& title, const String& artist, const String& genre);
 #endif
 

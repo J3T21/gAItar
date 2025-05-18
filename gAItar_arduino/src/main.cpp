@@ -21,16 +21,26 @@ String currentSongPath = "";
 size_t currentEventIndex = 0;
 unsigned long startTime = 0;
 unsigned long pauseOffset = 0;
+
 SemaphoreHandle_t playbackSemaphore;
+SemaphoreHandle_t sdSemaphore;
 
 TaskHandle_t instructionTaskHandle;
 TaskHandle_t playbackTaskHandle;
 TaskHandle_t heapTaskHandle;
+TaskHandle_t fileReceiverTaskHandle;
+
+void fileReceiverTask(void *pvParameters){
+    while (true){
+        fileReceiverRTOS(dataUart);
+        vTaskDelay(1/portTICK_PERIOD_MS);
+    }
+}
 
 void instructionTask(void *pvParameters) {
     Serial.println("Instruction task");
     while (true) {
-        instructionReceiverJson(instructionUart); // Call the instruction receiver function to handle incoming instructions
+        instructionReceiverRTOS(instructionUart); // Call the instruction receiver function to handle incoming instructions
         vTaskDelay(10 / portTICK_PERIOD_MS); // Delay to prevent task starvation
         // Serial.print("InstrTask stack left: ");
         // Serial.println(uxTaskGetStackHighWaterMark(NULL));
@@ -101,6 +111,11 @@ void setup() {
     delay(100);
 
     playbackSemaphore = xSemaphoreCreateMutex();
+    sdSemaphore = xSemaphoreCreateMutex();
+    if (sdSemaphore == NULL) {
+        Serial.println("Failed to create sdSemaphore!");
+        while (1); // Halt if semaphore creation fails
+    }
     if (playbackSemaphore == NULL) {
         Serial.println("Failed to create playbackSemaphore!");
         while (1); // Halt if semaphore creation fails
@@ -109,23 +124,38 @@ void setup() {
     BaseType_t result = xTaskCreate(
         instructionTask, // Function to implement the task
         "Instruction Task", // Name of the task
-        1024, // Stack size in words
+        512, // Stack size in words
         NULL, // Task input parameter
-        2, // Priority of the task
+        3, // Priority of the task
         &instructionTaskHandle); // Task handle
 
     if (result != pdPASS){
         Serial.println("Instr task failed to create");
     }
+    Serial.print("Free heap after instr");
+    Serial.println(xPortGetFreeHeapSize());
     result = xTaskCreate(
         playbackTask, // Function to implement the task
         "Playback Task", // Name of the task
-        2048, // Stack size in words
+        1024, // Stack size in words
         NULL, // Task input parameter
-        1, // Priority of the task
+        2, // Priority of the task
         &playbackTaskHandle); // Task handle
         if (result != pdPASS){
         Serial.println("Playback task failed to create");
+    }
+    Serial.print("Free heap after playback");
+    Serial.println(xPortGetFreeHeapSize());
+    result = xTaskCreate(
+        fileReceiverTask,
+        "FileReceiver Task",
+        2048, // Stack size in words (adjust as needed)
+        NULL,
+        1, // Priority (set appropriately for your system)
+        &fileReceiverTaskHandle
+    );
+    if (result != pdPASS) {
+        Serial.println("FileReceiver task failed to create");
     }
     //xTaskCreate(testTask, "Test", 1024, NULL, 1, NULL);
     // result = xTaskCreate(
@@ -139,7 +169,8 @@ void setup() {
     // // if (result != pdPASS){
     // //     Serial.println("Instr task failed to create");
     // // }
-    // Serial.println(xPortGetFreeHeapSize());
+    Serial.print("Free heap after file");
+    Serial.println(xPortGetFreeHeapSize());
     vTaskStartScheduler();
 
 }

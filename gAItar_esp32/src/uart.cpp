@@ -138,7 +138,7 @@ void uploadToSAMD_state(bool &sendFile, const String &filePath) {
   static unsigned long ackStartTime = 0;
   static size_t lastChunkSize = 0;
   static const int MAX_RETRIES = 10;
-  static const int TIMEOUT = 1000; // 1 second timeout for ACK
+  static const int TIMEOUT = 2000; // 1 second timeout for ACK
   static int retryCount = 0;
   static const String tempPath = "/temp";
 
@@ -179,7 +179,7 @@ void uploadToSAMD_state(bool &sendFile, const String &filePath) {
         String ack = upload_uart.readStringUntil('\n');
         Serial.println("Received Ack: " + ack);
         ack.trim(); // Remove any trailing whitespace
-        if (ack.startsWith("ACK:START:SIZE:")){
+        if (ack.indexOf("ACK:START:SIZE:") != -1){
           size_t recvdSize = ack.substring(String("ACK:START:SIZE:").length()).toInt();
           if (recvdSize == fileSize){
             state = SEND_CHUNK;
@@ -208,6 +208,7 @@ void uploadToSAMD_state(bool &sendFile, const String &filePath) {
     break;
 
     case SEND_CHUNK:
+      while(upload_uart.available()) upload_uart.read(); // Clear any available data
       if (file.available()){
         lastChunkSize = file.read(buffer, chunkSize);
         upload_uart.printf("CHUNK:%u:SIZE:%u\n", chunkId, lastChunkSize);
@@ -224,7 +225,7 @@ void uploadToSAMD_state(bool &sendFile, const String &filePath) {
       break;
 
     case WAIT_CHUNK_ACK:
-      if (upload_uart.available()){
+      while(upload_uart.available()){
         String ack = upload_uart.readStringUntil('\n');
         Serial.println("Received chunk ACK: " + ack);
         ack.trim(); // Remove any trailing whitespace
@@ -232,10 +233,11 @@ void uploadToSAMD_state(bool &sendFile, const String &filePath) {
           chunkId++;
           retryCount = 0;
           state = SEND_CHUNK;
-        }else{
+        }
+        else{
           Serial.printf("Unexpected chunk ACK: %s\n", ack.c_str());
         }
-      }else if (millis() - ackStartTime > TIMEOUT){
+      }if (millis() - ackStartTime > TIMEOUT){
         if (++retryCount <= MAX_RETRIES){
           Serial.printf("Chunk ACK timeout for chunk %u, retrying...\n", chunkId);
           upload_uart.printf("CHUNK:%u:SIZE:%u\n", chunkId, lastChunkSize);

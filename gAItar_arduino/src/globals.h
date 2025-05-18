@@ -4,7 +4,7 @@
 #include <SdFat.h>
 #include "servo_toggle.h"
 
-#define BAUDRATE 1000000
+#define BAUDRATE 115200
 #define NUM_FRETS 10 //number of implemented frets
 
 #define string1 0b00000001 // Initialize string1 LSB first

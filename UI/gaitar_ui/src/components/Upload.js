@@ -10,6 +10,7 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, setSong
   const [newArtist, setNewArtist] = useState('');
   const [searchTerm, setSearchTerm] = useState(''); // State for genre search
   const [artistSearchTerm, setArtistSearchTerm] = useState(''); // State for artist search
+  const [error, setError] = useState('');
 
   // Handle file input change
   const handleFileChange = (e) => {
@@ -21,6 +22,12 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, setSong
 
   // Handle file upload
   const handleUpload = async () => {
+    if (!file || !genre || !title || !artist) {
+      setError('Please fill in all fields (file, genre, title, and artist)');
+      return;
+    }
+    setError(''); // Clear any previous error
+
     console.log('Uploading file:', file);
     if (file && genre && title && artist) {
       const formData = new FormData();
@@ -136,8 +143,21 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, setSong
     }
   };
 
+  // Filter suggestions for artist and genre
+  const filteredArtistSuggestions = artists.filter(a =>
+    a && a.name && a.name.toLowerCase().includes(artistSearchTerm.toLowerCase())
+  );
+  const filteredGenreSuggestions = genres.filter(g =>
+    g && g.name && g.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
     <div>
+      {error && (
+        <div style={{ color: 'red', marginBottom: '10px' }}>
+          {error}
+        </div>
+      )}
       <input type="file" onChange={handleFileChange} accept=".midi, .mid" />
       <input
         type="text"
@@ -158,10 +178,10 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, setSong
               setArtist(e.target.value); // Set artist to the current input value
             }}
             className="artist-input"
-            list="artist-options"
+            list="artist-options" // <-- This connects the input to the datalist below
           />
           <datalist id="artist-options">
-            {artists.map((artist, index) => (
+            {filteredArtistSuggestions.map((artist, index) => (
               <option key={index} value={artist.name} />
             ))}
           </datalist>
@@ -185,10 +205,10 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, setSong
               setSearchTerm(e.target.value);
               setGenre(e.target.value); // Set genre to the current input value
             }}
-            list="genre-options"
+            list="genre-options" // <-- This connects the input to the datalist below
           />
           <datalist id="genre-options">
-            {genres.map((genre, index) => (
+            {filteredGenreSuggestions.map((genre, index) => (
               <option key={index} value={genre.name} />
             ))}
           </datalist>
