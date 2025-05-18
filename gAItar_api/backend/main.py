@@ -1,12 +1,18 @@
 import uvicorn
 import mido
-from mido import Message, MidiFile, MidiTrack, bpm2tempo, merge_tracks
-from pydantic import BaseModel
-from fastapi import FastAPI, File, UploadFile, Form
-from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Literal
+import torch
+import pickle
+import uuid
 from io import BytesIO
-
+from mido import MidiFile, MidiTrack, merge_tracks
+from typing import List
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+from transformers import T5Tokenizer
+from huggingface_hub import hf_hub_download
+from model.transformer_model import Transformer
 app = FastAPI()
 
 origins = [
@@ -36,6 +42,29 @@ class GuitarMidiEvents(BaseModel):
     duration_formatted: str 
     events: List[guitarEvent] # C-style array string representation probs will change
 #CORS middleware
+class PromptRequest(BaseModel):
+    prompt: str
+
+# ---------- Load Model + Tokenizer ----------
+repo_id = "amaai-lab/text2midi"
+model_path = hf_hub_download(repo_id=repo_id, filename="pytorch_model.bin")
+tokenizer_path = hf_hub_download(repo_id=repo_id, filename="vocab_remi.pkl")
+
+device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
+print(f"Using device: {device}")
+
+with open(tokenizer_path, "rb") as f:
+    r_tokenizer = pickle.load(f)
+
+vocab_size = len(r_tokenizer)
+model = Transformer(vocab_size, 768, 8, 2048, 18, 1024, False, 8, device=device)
+model.load_state_dict(torch.load(model_path, map_location=device))
+model.eval()
+
+tokenizer = T5Tokenizer.from_pretrained("google/flan-t5-base")
+print("Model and tokenizer loaded.")
+
+
 
 @app.get("/test-cors")
 async def test_cors():
@@ -53,6 +82,30 @@ async def upload_midi(midi_file: UploadFile = File(...), title: str = Form(...),
         "duration_formatted": ir["duration"],
         "events" : ir["events"]
     }
+
+@app.post("/generate-midi/")
+def generate_midi(request: PromptRequest):
+    prompt = request.prompt
+    print(f"Generating MIDI for: {prompt}")
+
+    try:
+        inputs = tokenizer(prompt, return_tensors='pt', padding=True, truncation=True)
+        input_ids = torch.nn.utils.rnn.pad_sequence(inputs.input_ids, batch_first=True, padding_value=0).to(device)
+        attention_mask = torch.nn.utils.rnn.pad_sequence(inputs.attention_mask, batch_first=True, padding_value=0).to(device)
+
+        output = model.generate(input_ids, attention_mask, max_len=2000, temperature=1.0)
+        output_list = output[0].tolist()
+
+        generated_midi = r_tokenizer.decode(output_list)
+
+        filename = f"output_{uuid.uuid4().hex[:8]}.mid"
+        generated_midi.dump_midi(filename)
+
+        return FileResponse(filename, media_type="audio/midi", filename=filename)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 

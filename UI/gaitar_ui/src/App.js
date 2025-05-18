@@ -4,6 +4,7 @@ import Playlist from './components/Playlist';
 import Controls from './components/Controls';
 import PlaybackInfo from './components/PlaybackInfo';
 import Upload from './components/Upload';
+import MidiGenerator from './components/GenMIDI';
 
 const App = () => {
   const [songs, setSongs] = useState([
@@ -214,7 +215,11 @@ const App = () => {
             currentPlaylist={currentPlaylist}
             setIsPlaying={setIsPlaying}
           />
+        <div className="generator">
+        <MidiGenerator />
         </div>
+        </div>
+
 
         <div className="right-column">
           <div className="playlist">

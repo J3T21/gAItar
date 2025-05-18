@@ -3,4 +3,37 @@ uvicorn
 mido
 requests
 pydantic
+transformers
+huggingface-hub
+torch
+python-multipart
 basic_pitch
+
+# Core FastAPI server dependencies
+fastapi
+uvicorn
+pydantic
+requests
+
+# MIDI processing
+mido
+
+# AI model dependencies
+torch
+transformers
+einops
+st-moe-pytorch
+accelerate
+jsonlines
+tqdm
+miditok
+sentencepiece
+
+# Optional or system-related (include if not in stdlib in your environment)
+argparse  # Note: built into Python 3.10, not needed if you're not using as package
+
+# For loading pre-trained models and tokenizers
+huggingface_hub
+
+# If your model uses pickle-serialized tokenizers
+pickle-mixin  # Only if using older Python (<3.8), optional
