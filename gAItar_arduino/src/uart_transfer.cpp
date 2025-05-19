@@ -15,6 +15,10 @@ extern unsigned long pauseOffset;
 extern SemaphoreHandle_t playbackSemaphore;
 extern SemaphoreHandle_t sdSemaphore;
 
+String prevTitle = "";
+String prevArtist = "";
+String prevGenre = "";
+
 void fileReceiver(Uart &fileUart) {
     static size_t fileSize = 0;
     static size_t receivedBytes = 0;
@@ -365,9 +369,6 @@ void instructionReceiverRTOS(Uart &instrUart) {
     static uint8_t length = 0;
     static uint8_t receivedBytes = 0;
     static uint8_t buffer[256];
-    String prevTitle = "";
-    String prevArtist = "";
-    String prevGenre = "";
 
     if (instrUart.available()) {
         uint8_t incomingByte = instrUart.read();
@@ -424,12 +425,7 @@ void instructionReceiverRTOS(Uart &instrUart) {
                             String title = doc["title"];
                             String artist = doc["artist"];
                             String genre = doc["genre"];
-                            Serial.println("Comparing metadata:");
 
-                        
-                            // Fast path: if same metadata and song is paused, just resume
-                            Serial.print("newSongRequested");
-                            Serial.println(newSongRequested);
                             if (!newSongRequested &&
                                 isPaused &&
                                 title == prevTitle &&

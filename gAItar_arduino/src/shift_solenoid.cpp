@@ -46,4 +46,13 @@ void clearAllFrets() {
         shiftOut(fretPins[i][1], fretPins[i][0], LSBFIRST, 0); // Clear all bits (release all solenoids)
         digitalWrite(fretPins[i][2], LOW); // Disable the shift register
     }
+                    
+    servo1.damper(); 
+    servo2.damper(); 
+    servo3.damper(); 
+    servo4.damper(); 
+    servo5.damper(); 
+    servo6.damper(); 
+                    
+    
 }

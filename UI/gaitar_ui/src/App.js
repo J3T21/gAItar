@@ -8,12 +8,12 @@ import MidiGenerator from './components/GenMIDI';
 
 const App = () => {
   const [songs, setSongs] = useState([
-    { title: 'Blinding Lights', artist: 'The Weeknd', genre: 'Pop' },
-    { title: 'Shape of You', artist: 'Ed Sheeran', genre: 'Pop' },
-    { title: 'Levitating', artist: 'Dua Lipa', genre: 'Pop' },
-    { title: 'Bohemian Rhapsody', artist: 'Queen', genre: 'Rock' },
-    { title: 'Stairway to Heaven', artist: 'Led Zeppelin', genre: 'Rock' },
-    { title: 'Hotel California', artist: 'Eagles', genre: 'Rock' },
+    // { title: 'Blinding Lights', artist: 'The Weeknd', genre: 'Pop' },
+    // { title: 'Shape of You', artist: 'Ed Sheeran', genre: 'Pop' },
+    // { title: 'Levitating', artist: 'Dua Lipa', genre: 'Pop' },
+    // { title: 'Bohemian Rhapsody', artist: 'Queen', genre: 'Rock' },
+    // { title: 'Stairway to Heaven', artist: 'Led Zeppelin', genre: 'Rock' },
+    // { title: 'Hotel California', artist: 'Eagles', genre: 'Rock' },
   ]);
 
   const [query, setQuery] = useState('');
@@ -40,6 +40,30 @@ const App = () => {
 
     setSuggestions(matchingSuggestions);
   }, [query, selectedArtist, selectedGenre, songs]);
+
+  useEffect(() => {
+  const fetchSongs = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/existing-songs'); // Adjust if using a different IP/port
+      const data = await response.json();
+
+      if (Array.isArray(data.songs)) {
+        const parsedSongs = data.songs.map((filename) => {
+          const title = filename.replace('.mid', '');
+          return { title, artist: 'Unknown', genre: 'Unknown' }; // Update if backend sends metadata
+        });
+        setSongs(parsedSongs);
+      } else {
+        console.error('Unexpected response format:', data);
+      }
+    } catch (error) {
+      console.error('Error fetching existing songs:', error);
+    }
+  };
+
+  fetchSongs();
+}, []);
+
 
   const handleInputChange = (e) => {
     const value = e.target.value;

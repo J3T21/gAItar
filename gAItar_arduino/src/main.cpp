@@ -34,6 +34,8 @@ void fileReceiverTask(void *pvParameters){
     while (true){
         fileReceiverRTOS(dataUart);
         vTaskDelay(1/portTICK_PERIOD_MS);
+        // Serial.print("fileTask stack left: ");
+        // Serial.println(uxTaskGetStackHighWaterMark(NULL));
     }
 }
 
@@ -124,7 +126,7 @@ void setup() {
     BaseType_t result = xTaskCreate(
         instructionTask, // Function to implement the task
         "Instruction Task", // Name of the task
-        512, // Stack size in words
+        1024, // Stack size in words
         NULL, // Task input parameter
         3, // Priority of the task
         &instructionTaskHandle); // Task handle
@@ -157,15 +159,15 @@ void setup() {
     if (result != pdPASS) {
         Serial.println("FileReceiver task failed to create");
     }
-    //xTaskCreate(testTask, "Test", 1024, NULL, 1, NULL);
-    // result = xTaskCreate(
-    //     heapMonitorTask,
-    //     "Heap Monitor",
-    //     512,
-    //     NULL,
-    //     3, // Lowest priority
-    //     &heapTaskHandle
-    // );   
+    // xTaskCreate(testTask, "Test", 1024, NULL, 1, NULL);
+    result = xTaskCreate(
+        heapMonitorTask,
+        "Heap Monitor",
+        512,
+        NULL,
+        3, // Lowest priority
+        &heapTaskHandle
+    );   
     // // if (result != pdPASS){
     // //     Serial.println("Instr task failed to create");
     // // }

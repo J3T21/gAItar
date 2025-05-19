@@ -13,6 +13,8 @@ from pydantic import BaseModel
 from transformers import T5Tokenizer
 from huggingface_hub import hf_hub_download
 from model.transformer_model import Transformer
+from miditok import TokenizerConfig
+
 app = FastAPI()
 
 origins = [
@@ -56,12 +58,19 @@ print(f"Using device: {device}")
 with open(tokenizer_path, "rb") as f:
     r_tokenizer = pickle.load(f)
 
+default_config = TokenizerConfig()
+for attr in vars(default_config):
+    if not hasattr(r_tokenizer.config, attr):
+        setattr(r_tokenizer.config, attr, getattr(default_config, attr))
+
 vocab_size = len(r_tokenizer)
 model = Transformer(vocab_size, 768, 8, 2048, 18, 1024, False, 8, device=device)
 model.load_state_dict(torch.load(model_path, map_location=device))
 model.eval()
 
 tokenizer = T5Tokenizer.from_pretrained("google/flan-t5-base")
+# Patch config if missing fields
+
 print("Model and tokenizer loaded.")
 
 
@@ -93,13 +102,17 @@ def generate_midi(request: PromptRequest):
         input_ids = torch.nn.utils.rnn.pad_sequence(inputs.input_ids, batch_first=True, padding_value=0).to(device)
         attention_mask = torch.nn.utils.rnn.pad_sequence(inputs.attention_mask, batch_first=True, padding_value=0).to(device)
 
-        output = model.generate(input_ids, attention_mask, max_len=2000, temperature=1.0)
+        output = model.generate(input_ids, attention_mask, max_len=500, temperature=1.0)
         output_list = output[0].tolist()
 
         generated_midi = r_tokenizer.decode(output_list)
+        print("Generated MIDI object:", generated_midi)
+        print("Type of generated_midi:", type(generated_midi))
 
         filename = f"output_{uuid.uuid4().hex[:8]}.mid"
         generated_midi.dump_midi(filename)
+
+
 
         return FileResponse(filename, media_type="audio/midi", filename=filename)
 
