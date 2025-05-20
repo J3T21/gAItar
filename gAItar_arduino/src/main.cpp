@@ -163,7 +163,7 @@ void setup() {
     result = xTaskCreate(
         heapMonitorTask,
         "Heap Monitor",
-        512,
+        128,
         NULL,
         3, // Lowest priority
         &heapTaskHandle

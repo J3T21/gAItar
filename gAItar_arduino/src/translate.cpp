@@ -554,9 +554,12 @@ void playGuitarRTOS(const char* filePath) {
 
     if (!isPlaying || isPaused) {
         // If not playing or paused, cleanup and return
-        if (fileLoaded && file) {
+        if (xSemaphoreTake(sdSemaphore, portMAX_DELAY)){
+            if (fileLoaded && file) {
             file.close();
             fileLoaded = false;
+            }
+            xSemaphoreGive(sdSemaphore);
         }
         clearAllFrets();
         return;
@@ -615,21 +618,21 @@ void playGuitarRTOS(const char* filePath) {
                     case 6: servo6.damper(); break;
                     default: Serial.println("Invalid string number!"); break;
                 }
-                // for (int f = 0; f < NUM_FRETS; f++) {
-                //     switch (string) {
-                //         case 1: fretStates[f] &= ~string1; break;
-                //         case 2: fretStates[f] &= ~string2; break;
-                //         case 3: fretStates[f] &= ~string3; break;
-                //         case 4: fretStates[f] &= ~string4; break;
-                //         case 5: fretStates[f] &= ~string5; break;
-                //         case 6: fretStates[f] &= ~string6; break;
-                //     }
-                //     int clkPin = fretPins[f][0];
-                //     int dataPin = fretPins[f][1];
-                //     int clearPin = fretPins[f][2];
-                //     digitalWrite(clearPin, HIGH);
-                //     shiftOut(dataPin, clkPin, LSBFIRST, fretStates[f]);
-                // }
+                for (int f = 0; f < NUM_FRETS; f++) {
+                    switch (string) {
+                        case 1: fretStates[f] &= ~string1; break;
+                        case 2: fretStates[f] &= ~string2; break;
+                        case 3: fretStates[f] &= ~string3; break;
+                        case 4: fretStates[f] &= ~string4; break;
+                        case 5: fretStates[f] &= ~string5; break;
+                        case 6: fretStates[f] &= ~string6; break;
+                    }
+                    int clkPin = fretPins[f][0];
+                    int dataPin = fretPins[f][1];
+                    int clearPin = fretPins[f][2];
+                    digitalWrite(clearPin, HIGH);
+                    shiftOut(dataPin, clkPin, LSBFIRST, fretStates[f]);
+                }
             } else if (fret == 0) {
                 switch (string) {
                     case 1: servo1.move(0); break;

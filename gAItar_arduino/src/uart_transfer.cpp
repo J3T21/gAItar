@@ -535,7 +535,6 @@ bool createDirectoriesRTOS(String fullPath) {
                 if (!sd.mkdir(tempPath.c_str())) {
                     Serial.print("Failed to create: ");
                     Serial.println(tempPath);
-                    xSemaphoreGive(sdSemaphore);
                     return false;
                 }
             }
