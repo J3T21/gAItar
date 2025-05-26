@@ -68,5 +68,14 @@ extern ServoController servo4;
 extern ServoController servo5;
 extern ServoController servo6;
 extern byte fretStates[NUM_FRETS]; // State of each fret's shift register
+struct SoftStartState {
+    unsigned long startTime = 0;
+    unsigned long lastToggleTime = 0;
+    bool pwmOn = false;
+    bool ramping = false;
+};
+
+// Declare the array for all frets (or more if needed)
+extern SoftStartState softStartStates[NUM_FRETS*6];
 
 #endif // GLOBALS_H

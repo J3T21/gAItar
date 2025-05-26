@@ -33,7 +33,8 @@ TaskHandle_t fileReceiverTaskHandle;
 void fileReceiverTask(void *pvParameters){
     while (true){
         fileReceiverRTOS(dataUart);
-        vTaskDelay(1/portTICK_PERIOD_MS);
+        //vTaskDelay(1 / portTICK_PERIOD_MS);
+        taskYIELD();
         // Serial.print("fileTask stack left: ");
         // Serial.println(uxTaskGetStackHighWaterMark(NULL));
     }
@@ -43,7 +44,8 @@ void instructionTask(void *pvParameters) {
     Serial.println("Instruction task");
     while (true) {
         instructionReceiverRTOS(instructionUart); // Call the instruction receiver function to handle incoming instructions
-        vTaskDelay(10 / portTICK_PERIOD_MS); // Delay to prevent task starvation
+        //vTaskDelay(10 / portTICK_PERIOD_MS); // Delay to prevent task starvation
+        taskYIELD();
         // Serial.print("InstrTask stack left: ");
         // Serial.println(uxTaskGetStackHighWaterMark(NULL));
     }
@@ -178,6 +180,8 @@ void setup() {
 }
 
 void loop() {
+    // testFretPWM(1, 1000, 10); 
+    // testFret(1,1000,10);
 //   fileReceiver_state(dataUart); // Call the file receiver function to handle incoming data
 //   instructionReceiverJson(instructionUart); // Call the instruction receiver function to handle incoming instructions
   //testSerialControlservo();

@@ -1,21 +1,14 @@
 import './App.css';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Playlist from './components/Playlist';
 import Controls from './components/Controls';
 import PlaybackInfo from './components/PlaybackInfo';
 import Upload from './components/Upload';
 import MidiGenerator from './components/GenMIDI';
+import { esp32 } from './api'; // Import the API instance
 
 const App = () => {
-  const [songs, setSongs] = useState([
-    // { title: 'Blinding Lights', artist: 'The Weeknd', genre: 'Pop' },
-    // { title: 'Shape of You', artist: 'Ed Sheeran', genre: 'Pop' },
-    // { title: 'Levitating', artist: 'Dua Lipa', genre: 'Pop' },
-    // { title: 'Bohemian Rhapsody', artist: 'Queen', genre: 'Rock' },
-    // { title: 'Stairway to Heaven', artist: 'Led Zeppelin', genre: 'Rock' },
-    // { title: 'Hotel California', artist: 'Eagles', genre: 'Rock' },
-  ]);
-
+  const [songs, setSongs] = useState([]);
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [selectedArtist, setSelectedArtist] = useState('');
@@ -28,6 +21,43 @@ const App = () => {
 
   const uniqueArtists = [...new Set(songs.map(song => song.artist))].sort();
   const uniqueGenres = [...new Set(songs.map(song => song.genre))].sort();
+  const fetchSongsCalled = useRef(false); // Ref to track if fetchSongs has been called
+
+  useEffect(() => {
+    const fetchSongs = async () => {
+      if (fetchSongsCalled.current) return; // Prevent multiple calls
+      fetchSongsCalled.current = true; // Mark as called
+
+      try {
+        const response = await esp32.get('/existing-songs'); // Adjust the endpoint if necessary
+        console.log('Fetched songs from ESP32:', response.data);
+
+        // Split the response string into an array of paths
+        const paths = response.data.split('\n').filter((path) => path.trim() !== '');
+
+        if (Array.isArray(paths)) {
+          const parsedSongs = paths.map((path) => {
+            // Split the path into parts
+            const parts = path.split('/');
+            const genre = parts[1] || 'Unknown'; // Extract genre
+            const artist = parts[2] || 'Unknown'; // Extract artist
+            const titleWithExtension = parts[3] || 'Unknown'; // Extract title with extension
+            const title = titleWithExtension.replace('.json', ''); // Remove the .json extension
+
+            return { title, artist, genre }; // Return the parsed song object
+          });
+
+          setSongs(parsedSongs); // Update the songs state with the parsed data
+        } else {
+          console.error('Unexpected response format:', response.data);
+        }
+      } catch (error) {
+        console.error('Error fetching songs from ESP32:', error);
+      }
+    };
+
+    fetchSongs();
+  }, []); // Empty dependency array ensures this runs only once
 
   useEffect(() => {
     // Filter songs based on the query, selected artist, and selected genre
@@ -39,31 +69,7 @@ const App = () => {
     });
 
     setSuggestions(matchingSuggestions);
-  }, [query, selectedArtist, selectedGenre, songs]);
-
-  useEffect(() => {
-  const fetchSongs = async () => {
-    try {
-      const response = await fetch('http://localhost:8000/existing-songs'); // Adjust if using a different IP/port
-      const data = await response.json();
-
-      if (Array.isArray(data.songs)) {
-        const parsedSongs = data.songs.map((filename) => {
-          const title = filename.replace('.mid', '');
-          return { title, artist: 'Unknown', genre: 'Unknown' }; // Update if backend sends metadata
-        });
-        setSongs(parsedSongs);
-      } else {
-        console.error('Unexpected response format:', data);
-      }
-    } catch (error) {
-      console.error('Error fetching existing songs:', error);
-    }
-  };
-
-  fetchSongs();
-}, []);
-
+  }, [query, selectedArtist, selectedGenre, songs]); // Dependencies ensure this runs whenever these states change
 
   const handleInputChange = (e) => {
     const value = e.target.value;

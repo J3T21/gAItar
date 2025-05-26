@@ -117,25 +117,52 @@ void testSerialControlsolenoid(){
     }
 }
 
-void testFretPWM(int fret, int timehold, char pwmtype, int rampdelay){
-    for (int string = 1; string < 7; string++) {
-        int clkPin = fretPins[fret - 1][0];
-        int dataPin = fretPins[fret - 1][1];
-        int clearPin = fretPins[fret - 1][2];
-        clearInactiveFrets(fret - 1); // Clear inactive frets
-        digitalWrite(clearPin, HIGH); // Enable shift register
+void testFretPWM(int start_fret, int timeHold, int stop_Fret) {
+    for (int i = start_fret - 1; i < stop_Fret; i++) {
+        int clkPin = fretPins[i][0];
+        int dataPin = fretPins[i][1];
+        int clearPin = fretPins[i][2];
 
-        // Select the PWM type and execute the corresponding function
-        if (pwmtype == 'r') {
-            pwmRampPress(fret, string, 255, rampdelay, timehold);
-        } else if (pwmtype == 'l') {
-            pwmLogRampPress(fret, string, 255, rampdelay, timehold);
-        } else if (pwmtype == 's') {
-            pwmSineRampPress(fret, string, 255, rampdelay, timehold);
-        } else if (pwmtype == 'i') {
-            instantPress(fret, string, timehold);
-        } 
-        delay(timehold);
-        clearInactiveFrets(fret - 1); // Clear inactive frets
+        clearInactiveFrets(i); // Clear other frets
+
+        for (int string = 0; string < 6; string++) {
+            byte stringBit = stringOrder[string];
+            byte newFretState = stringBit;
+            byte softStartMask = 0x00;  // Since all other strings are off here
+
+            int stateIndex = i * 6 + string;
+            SoftStartState& state = softStartStates[stateIndex];
+
+            // Reset the state before starting a new soft start
+            state.ramping = false;
+
+            unsigned long start = millis();
+            while (millis() - start < timeHold) {
+                softStart(clkPin, dataPin, clearPin, newFretState, softStartMask, state);
+                delayMicroseconds(500); // Polling period for softStart (adjustable)
+            }
+
+            // Now turn it off
+            shiftOut(dataPin, clkPin, LSBFIRST, 0);
+            delay(timeHold);
+
+            clearInactiveFrets(i);
+        }
+
+        // All bits ON test
+        byte allOn = 0xFF;
+        byte mask = 0x00;
+        int dummyIndex = i * 6 + 0;  // Any unused slot
+        SoftStartState& allOnState = softStartStates[dummyIndex];
+        allOnState.ramping = false;
+
+        unsigned long start = millis();
+        while (millis() - start < timeHold) {
+            softStart(clkPin, dataPin, clearPin, allOn, mask, allOnState);
+            delayMicroseconds(500);
+        }
+
+        shiftOut(dataPin, clkPin, LSBFIRST, 0);
+        delay(timeHold);
     }
 }

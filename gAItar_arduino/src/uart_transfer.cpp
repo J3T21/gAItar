@@ -364,6 +364,37 @@ void instructionReceiver(Uart &instrUart) {
     }
 }
 
+void listFilesRecursiveUart(SdFile& dir, Uart& uart, String path = "/") {
+    SdFile entry;
+    char name[64];
+
+    while (entry.openNext(&dir, O_RDONLY)) {
+        entry.getName(name, sizeof(name));
+        if (entry.isDir()) {
+            // Skip "." and ".." entries
+            if (strcmp(name, ".") != 0 && strcmp(name, "..") != 0 && strcmp(name, "System Volume Information") !=0) {
+                String subDirPath = path + name + "/";
+                listFilesRecursiveUart(entry, uart, subDirPath); // Recurse into subdirectory
+            }
+        } else {
+            // Send the full file path to the UART
+            uart.println(path + name);
+            Serial.println(path + name);
+        }
+        entry.close();
+    }
+}
+
+void listFilesOnSDUart(Uart& uart) {
+    SdFile root;
+    if (!root.open("/")) {
+       // uart.println("Failed to open root directory");
+        return;
+    }
+    listFilesRecursiveUart(root, uart, "/");
+    root.close();
+}
+
 void instructionReceiverRTOS(Uart &instrUart) {
     static enum { WAIT_FOR_HEADER, WAIT_FOR_LENGTH, WAIT_FOR_PAYLOAD } state = WAIT_FOR_HEADER;
     static uint8_t length = 0;
@@ -406,7 +437,16 @@ void instructionReceiverRTOS(Uart &instrUart) {
 
                     // Check if the buffer starts with "[Play]"
                 // Check if the buffer starts with "[Play]"
-                    if (xSemaphoreTake(playbackSemaphore, portMAX_DELAY)) {
+                if (strncmp((char*)buffer, "List", 4) == 0) {
+                    // List files on SD card
+                    if (xSemaphoreTake(sdSemaphore, portMAX_DELAY)) {
+                        listFilesOnSDUart(instructionUart);
+                        xSemaphoreGive(sdSemaphore);
+                    } else {
+                        Serial.println("Failed to take sdSemaphore in instructionReceiverRTOS");
+                    }
+                }
+                else if (xSemaphoreTake(playbackSemaphore, portMAX_DELAY)) {
                         if (strncmp((char*)buffer, "[Play]", 6) == 0) {
                             const char* jsonPart = (char*)buffer + 6;
                         
@@ -584,6 +624,8 @@ void listFilesOnSD() {
     listFilesRecursive(root, "/");
     root.close();
 }
+
+
 
 enum ReceiveState{
     PARSE_HEADER,

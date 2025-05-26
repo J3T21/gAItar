@@ -119,12 +119,39 @@ void setupTestServer(AsyncWebServer& server) {
   };
   };
 
+  auto handleGet = [](const String &label) {
+    return [label](AsyncWebServerRequest *request) {
+        Serial.println("Processing GET request: " + label);
+
+        // Send instruction to SAMD
+        instructionToSAMD(reinterpret_cast<const uint8_t *>(label.c_str()), label.length());
+
+        // Wait for response from SAMD
+        String uartResponse = "";
+        unsigned long startTime = millis();
+        while (millis() - startTime < 2000) { // 2-second timeout
+            if (instruction_uart.available()) {
+                uartResponse += instruction_uart.readString();
+            }
+        }
+
+        if (uartResponse.isEmpty()) {
+            uartResponse = "No response from SAMD.";
+        }
+        Serial.println("uartResponse" + uartResponse);
+        // Send the UART response back to the HTTP request
+        AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", uartResponse);
+        request->send(response);
+    };
+  };
+
   // Routes
   server.on("/play", HTTP_POST, handleRequest("Play"), nullptr, handleBody("Play"));
   server.on("/pause", HTTP_POST, handlePauseRequest("Pause"), nullptr, nullptr);
   server.on("/skip", HTTP_POST, handleRequest("Skip"), nullptr, handleBody("Skip"));
   server.on("/shuffle", HTTP_POST, handleRequest("Shuffle"), nullptr, handleBody("Shuffle"));
   server.on("/upload", HTTP_POST, handleRequest("Upload"),handleFile("Upload"), nullptr);
+  server.on("/existing-songs", HTTP_GET, handleGet("List"));
   server.begin();
 }
 

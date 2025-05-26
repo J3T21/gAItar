@@ -9,5 +9,5 @@ void testFret(int start_fret, int timeHold, int stop_Fret);
 void testCombined(int start_fret, int timeHold);
 void testSerialControlservo(); // Function to test serial control of servos
 void testSerialControlsolenoid(); // Function to test serial control of solenoids
-void testFretPWM(int fret, int timehold, char pwmtype, int rampDelay);
+void testFretPWM(int start_fret, int timeHold, int stop_Fret);
 #endif // TEST_FUNCS_H

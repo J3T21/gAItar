@@ -43,15 +43,18 @@ export default function MidiGenerator() {
 
     const now = Tone.now();
 
-    midi.tracks.forEach(track => {
-      const synth = new Tone.Synth().toDestination();
+    // Use a PolySynth to handle overlapping notes
+    const polySynth = new Tone.PolySynth(Tone.Synth).toDestination();
 
-      track.notes.forEach(note => {
-        synth.triggerAttackRelease(
-          note.name,
-          note.duration,
-          now + note.time
-        );
+    // Filter out non-melodic tracks (e.g., percussion on channel 10)
+    const melodicTracks = midi.tracks.filter((track) => {
+      return track.notes.length > 0 && track.channel !== 9; // Channel 10 is 0-indexed as 9
+    });
+
+    melodicTracks.forEach((track) => {
+      track.notes.forEach((note) => {
+        // Schedule each note to play at its specified time
+        polySynth.triggerAttackRelease(note.name, note.duration, now + note.time);
       });
     });
   };

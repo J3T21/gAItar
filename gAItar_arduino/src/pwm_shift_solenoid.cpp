@@ -56,3 +56,51 @@ void pwmSineRampPress(int fretIndex, int stringIndex, int targetBrightness, int 
     shiftLSB(data, clk, pattern);
     delay(holdMs);
 }
+
+void softStart(int clkPin, int dataPin, int clearPin, byte fretState, byte softStartMask, SoftStartState &state) {
+    const unsigned long rampDuration = 1000; // in milliseconds
+    const unsigned long pwmPeriod = 5000;    // in microseconds
+
+    unsigned long nowMicros = micros();
+    unsigned long nowMillis = millis();
+
+    if (!state.ramping) {
+        state.startTime = nowMillis;
+        state.lastToggleTime = nowMicros;
+        state.pwmOn = false;
+        state.ramping = true;
+    }
+
+    unsigned long elapsed = nowMillis - state.startTime;
+
+    // Done ramping — full ON
+    if (elapsed >= rampDuration) {
+        digitalWrite(clearPin, HIGH);
+        shiftOut(dataPin, clkPin, LSBFIRST, fretState);
+        state.ramping = false;
+        return;
+    }
+
+    // Calculate duty cycle based on progress
+    float progress = float(elapsed) / rampDuration;
+    int dutyCycle = int(progress * 100);
+    if (dutyCycle > 100) dutyCycle = 100;
+
+    unsigned long onTime = (pwmPeriod * dutyCycle) / 100;
+    unsigned long offTime = pwmPeriod - onTime;
+
+    // PWM timing
+    if (state.pwmOn && (nowMicros - state.lastToggleTime >= onTime)) {
+        byte maskedState = fretState & ~softStartMask;
+        digitalWrite(clearPin, HIGH);
+        shiftOut(dataPin, clkPin, LSBFIRST, maskedState);
+        state.pwmOn = false;
+        state.lastToggleTime = nowMicros;
+    }
+    else if (!state.pwmOn && (nowMicros - state.lastToggleTime >= offTime)) {
+        digitalWrite(clearPin, HIGH);
+        shiftOut(dataPin, clkPin, LSBFIRST, fretState);
+        state.pwmOn = true;
+        state.lastToggleTime = nowMicros;
+    }
+}

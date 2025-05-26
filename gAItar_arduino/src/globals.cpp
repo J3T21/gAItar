@@ -34,3 +34,5 @@ const byte stringOrder[6] = {
     string5, // A
     string6  // Low E
 };
+
+SoftStartState softStartStates[NUM_FRETS*6];
