@@ -18,6 +18,7 @@ class ServoController {
         ServoController(int pin, int posA, int posB); // Constructor
         void move(int delayMs = 0); // Method to move the servo
         void damper();
+        void release(int delayMs = 0);
 };
 
 class PwmServoController {

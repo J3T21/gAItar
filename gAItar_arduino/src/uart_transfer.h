@@ -14,6 +14,7 @@ const char* findFile(const String& title, const String& artist, const String& ge
 void instructionReceiverRTOS(Uart &instrUart); // Function to receive instructions in JSON format over UART
 void fileReceiverRTOS(Uart &fileUart); // Function to receive files over UART with RTOS
 const char* findFileRTOS(const String& title, const String& artist, const String& genre);
-
+const char* findFileSimple(const String& title, const String& artist, const String& genre);
+void fileReceiverRTOS_new(Uart &fileUart);
 #endif
 

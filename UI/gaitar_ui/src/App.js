@@ -39,12 +39,24 @@ const App = () => {
           const parsedSongs = paths.map((path) => {
             // Split the path into parts
             const parts = path.split('/');
-            const genre = parts[1] || 'Unknown'; // Extract genre
-            const artist = parts[2] || 'Unknown'; // Extract artist
+            const genreRaw = parts[1] || 'Unknown'; // Extract genre
+            const artistRaw = parts[2] || 'Unknown'; // Extract artist
             const titleWithExtension = parts[3] || 'Unknown'; // Extract title with extension
-            const title = titleWithExtension.replace('.json', ''); // Remove the .json extension
+            const titleRaw = titleWithExtension.replace('.json', ''); // Remove the .json extension
 
-            return { title, artist, genre }; // Return the parsed song object
+            // Enhanced unsanitize function to handle Windows line endings
+            const unsanitize = (str) => {
+              return str.replace(/_/g, ' ')           // Replace underscores with spaces
+                       .replace(/[\r\n\t\f\v]/g, ' ') // Replace control characters with spaces
+                       .replace(/\s+/g, ' ')           // Collapse multiple spaces
+                       .trim();                        // Remove leading/trailing whitespace
+            };
+
+            const genre = unsanitize(genreRaw);
+            const artist = unsanitize(artistRaw);
+            const title = unsanitize(titleRaw);
+
+            return { title, artist, genre }; // Return the parsed song object with spaces
           });
 
           setSongs(parsedSongs); // Update the songs state with the parsed data
@@ -123,8 +135,8 @@ const App = () => {
 
     if (matchingSong) {
       setCurrentPlaylist((prevPlaylist) => {
-        if (!prevPlaylist.includes(matchingSong.title)) {
-          return [...prevPlaylist, matchingSong.title];
+        if (!prevPlaylist.some((track) => track.title === matchingSong.title)) {
+          return [...prevPlaylist, matchingSong]; // Add full song object
         }
         return prevPlaylist;
       });
@@ -243,6 +255,7 @@ const App = () => {
             currentTrack={currentTrack}
             setCurrentTrack={setCurrentTrack}
             currentPlaylist={currentPlaylist}
+            setCurrentPlaylist={setCurrentPlaylist} // Pass setCurrentPlaylist here
             setIsPlaying={setIsPlaying}
           />
         <div className="generator">
@@ -253,7 +266,14 @@ const App = () => {
 
         <div className="right-column">
           <div className="playlist">
-            <Playlist currentPlaylist={currentPlaylist} />
+            <Playlist 
+              currentPlaylist={currentPlaylist} 
+              setCurrentPlaylist={setCurrentPlaylist} // Add this prop
+              selectPlaylist={(track) => {
+                setCurrentTrack(track);
+                setIsPlaying(false);
+              }}
+            />
           </div>
         </div>
 

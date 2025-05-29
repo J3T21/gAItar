@@ -150,6 +150,9 @@ void uploadToSAMD_state(bool &sendFile, const String &filePath) {
       break;
     
     case OPEN_FILE:
+      while (upload_uart.available()) {
+        upload_uart.read();
+      }
       file = SPIFFS.open(tempPath, FILE_READ);
       if (!file){
         Serial.println("Failed to open file: " + tempPath);
@@ -177,7 +180,7 @@ void uploadToSAMD_state(bool &sendFile, const String &filePath) {
     case WAIT_HEADER_ACK:
       if (upload_uart.available()){
         String ack = upload_uart.readStringUntil('\n');
-        Serial.println("Received Ack: " + ack);
+        //Serial.println("Received Ack: " + ack);
         ack.trim(); // Remove any trailing whitespace
         if (ack.indexOf("ACK:START:SIZE:") != -1){
           size_t recvdSize = ack.substring(String("ACK:START:SIZE:").length()).toInt();
@@ -212,8 +215,8 @@ void uploadToSAMD_state(bool &sendFile, const String &filePath) {
       if (file.available()){
         lastChunkSize = file.read(buffer, chunkSize);
         upload_uart.printf("CHUNK:%u:SIZE:%u\n", chunkId, lastChunkSize);
-        Serial.printf("Sending chunk %u of size %u\n", chunkId, lastChunkSize);
-        Serial.printf("CHUNK:%u:SIZE:%u\n", chunkId, lastChunkSize);
+        // Serial.printf("Sending chunk %u of size %u\n", chunkId, lastChunkSize);
+        // Serial.printf("CHUNK:%u:SIZE:%u\n", chunkId, lastChunkSize);
         upload_uart.write(buffer, lastChunkSize);
         ackStartTime = millis();
         retryCount = 0;
@@ -227,15 +230,12 @@ void uploadToSAMD_state(bool &sendFile, const String &filePath) {
     case WAIT_CHUNK_ACK:
       while(upload_uart.available()){
         String ack = upload_uart.readStringUntil('\n');
-        Serial.println("Received chunk ACK: " + ack);
+        // Serial.println("Received chunk ACK: " + ack);
         ack.trim(); // Remove any trailing whitespace
         if (ack == ("ACK:CHUNK:" + String(chunkId))){
           chunkId++;
           retryCount = 0;
           state = SEND_CHUNK;
-        }
-        else{
-          Serial.printf("Unexpected chunk ACK: %s\n", ack.c_str());
         }
       }if (millis() - ackStartTime > TIMEOUT){
         if (++retryCount <= MAX_RETRIES){

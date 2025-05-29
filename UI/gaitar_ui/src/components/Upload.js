@@ -11,6 +11,8 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, setSong
   const [searchTerm, setSearchTerm] = useState(''); // State for genre search
   const [artistSearchTerm, setArtistSearchTerm] = useState(''); // State for artist search
   const [error, setError] = useState('');
+  const [showArtistDropdown, setShowArtistDropdown] = useState(false);
+  const [showGenreDropdown, setShowGenreDropdown] = useState(false);
 
   // Handle file input change
   const handleFileChange = (e) => {
@@ -97,6 +99,8 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, setSong
           setGenre('');
           setTitle('');
           setArtist('');
+          setArtistSearchTerm('');
+          setSearchTerm('');
 
           console.log('Song added to the list:', response.data.title);
 
@@ -143,13 +147,32 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, setSong
     }
   };
 
-  // Filter suggestions for artist and genre
-  const filteredArtistSuggestions = artists.filter(a =>
-    a && a.name && a.name.toLowerCase().includes(artistSearchTerm.toLowerCase())
-  );
-  const filteredGenreSuggestions = genres.filter(g =>
-    g && g.name && g.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filter suggestions for artist and genre (limited to top 5)
+  const filteredArtistSuggestions = artists
+    .filter(artist =>
+      artist && artist.toLowerCase().includes(artistSearchTerm.toLowerCase())
+    )
+    .slice(0, 5); // Limit to top 5 results
+
+  const filteredGenreSuggestions = genres
+    .filter(genre =>
+      genre && genre.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    .slice(0, 5); // Limit to top 5 results
+
+  // Handle artist suggestion click
+  const handleArtistSuggestionClick = (selectedArtist) => {
+    setArtist(selectedArtist);
+    setArtistSearchTerm(selectedArtist);
+    setShowArtistDropdown(false);
+  };
+
+  // Handle genre suggestion click
+  const handleGenreSuggestionClick = (selectedGenre) => {
+    setGenre(selectedGenre);
+    setSearchTerm(selectedGenre);
+    setShowGenreDropdown(false);
+  };
 
   return (
     <div>
@@ -166,57 +189,64 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, setSong
         onChange={(e) => setTitle(e.target.value)}
       />
 
-      {/* Artist selection and add new artist section */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <div className="artist-selection-container">
-          <input
-            type="text"
-            placeholder="Add Artist"
-            value={artistSearchTerm}
-            onChange={(e) => {
-              setArtistSearchTerm(e.target.value);
-              setArtist(e.target.value); // Set artist to the current input value
-            }}
-            className="artist-input"
-            list="artist-options" // <-- This connects the input to the datalist below
-          />
-          <datalist id="artist-options">
+      {/* Artist selection with dropdown */}
+      <div className="artist-selection-container" style={{ position: 'relative' }}>
+        <input
+          type="text"
+          placeholder="Enter or select artist"
+          value={artistSearchTerm}
+          onChange={(e) => {
+            setArtistSearchTerm(e.target.value);
+            setArtist(e.target.value);
+            setShowArtistDropdown(true);
+          }}
+          onFocus={() => setShowArtistDropdown(true)}
+          onBlur={() => setTimeout(() => setShowArtistDropdown(false), 200)}
+          className="artist-input"
+        />
+        {showArtistDropdown && filteredArtistSuggestions.length > 0 && (
+          <ul className="upload-suggestions-list">
             {filteredArtistSuggestions.map((artist, index) => (
-              <option key={index} value={artist.name} />
+              <li
+                key={index}
+                className="upload-suggestion-item"
+                onMouseDown={() => handleArtistSuggestionClick(artist)}
+              >
+                {artist}
+              </li>
             ))}
-          </datalist>
-        </div>
-
-        <div className="add-artist-container">
-          <button onClick={handleAddArtist} className="add-artist-button">
-            Add Artist
-          </button>
-        </div>
+          </ul>
+        )}
       </div>
 
-      {/* Genre selection and add new genre section */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <div className="genre-selection-container">
-          <input
-            type="text"
-            placeholder="Add Genre"
-            value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-              setGenre(e.target.value); // Set genre to the current input value
-            }}
-            list="genre-options" // <-- This connects the input to the datalist below
-          />
-          <datalist id="genre-options">
+      {/* Genre selection with dropdown */}
+      <div className="genre-selection-container" style={{ position: 'relative' }}>
+        <input
+          type="text"
+          placeholder="Enter or select genre"
+          value={searchTerm}
+          onChange={(e) => {
+            setSearchTerm(e.target.value);
+            setGenre(e.target.value);
+            setShowGenreDropdown(true);
+          }}
+          onFocus={() => setShowGenreDropdown(true)}
+          onBlur={() => setTimeout(() => setShowGenreDropdown(false), 200)}
+          className="genre-input"
+        />
+        {showGenreDropdown && filteredGenreSuggestions.length > 0 && (
+          <ul className="upload-suggestions-list">
             {filteredGenreSuggestions.map((genre, index) => (
-              <option key={index} value={genre.name} />
+              <li
+                key={index}
+                className="upload-suggestion-item"
+                onMouseDown={() => handleGenreSuggestionClick(genre)}
+              >
+                {genre}
+              </li>
             ))}
-          </datalist>
-        </div>
-
-        <div className="add-genre-container">
-          <button onClick={handleAddGenre}>Add Genre</button>
-        </div>
+          </ul>
+        )}
       </div>
 
       {/* Upload button */}

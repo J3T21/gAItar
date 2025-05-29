@@ -60,42 +60,42 @@ export default function MidiGenerator() {
   };
 
   return (
-    <div className="max-w-md mx-auto p-4 rounded-xl shadow-lg bg-white space-y-4">
-      <h2 className="text-xl font-bold text-gray-800">Generate MIDI from Prompt</h2>
+    <div className="midi-generator">
+      <h2>Generate MIDI from Prompt</h2>
       <textarea
-        className="w-full p-2 border border-gray-300 rounded"
-        rows="4"
-        placeholder="Enter prompt..."
+        className="midi-prompt-textarea"
+        rows="6"
+        placeholder="Enter a detailed prompt for MIDI generation... (e.g., 'A peaceful guitar melody in C major with a slow tempo')"
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
       />
       <button
         onClick={handleGenerate}
         disabled={loading}
-        className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700"
+        className="midi-generate-button"
       >
         {loading ? 'Generating...' : 'Generate MIDI'}
       </button>
 
       {midiUrl && (
-        <div className="space-y-2">
+        <div className="midi-controls">
           <button
             onClick={playMidi}
-            className="w-full bg-green-600 text-white p-2 rounded hover:bg-green-700"
+            className="midi-play-button"
           >
             Play MIDI
           </button>
           <a
             href={midiUrl}
             download="generated.mid"
-            className="block text-blue-500 underline text-center"
+            className="midi-download-link"
           >
             Download MIDI
           </a>
         </div>
       )}
 
-      {error && <p className="text-red-500 text-center">{error}</p>}
+      {error && <p className="midi-error">{error}</p>}
     </div>
   );
 }

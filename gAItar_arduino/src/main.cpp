@@ -32,7 +32,7 @@ TaskHandle_t fileReceiverTaskHandle;
 
 void fileReceiverTask(void *pvParameters){
     while (true){
-        fileReceiverRTOS(dataUart);
+        fileReceiverRTOS_new(dataUart);
         //vTaskDelay(1 / portTICK_PERIOD_MS);
         taskYIELD();
         // Serial.print("fileTask stack left: ");
@@ -44,8 +44,8 @@ void instructionTask(void *pvParameters) {
     Serial.println("Instruction task");
     while (true) {
         instructionReceiverRTOS(instructionUart); // Call the instruction receiver function to handle incoming instructions
-        //vTaskDelay(10 / portTICK_PERIOD_MS); // Delay to prevent task starvation
-        taskYIELD();
+        vTaskDelay(10 / portTICK_PERIOD_MS); // Delay to prevent task starvation
+        //taskYIELD();
         // Serial.print("InstrTask stack left: ");
         // Serial.println(uxTaskGetStackHighWaterMark(NULL));
     }
@@ -63,7 +63,7 @@ void playbackTask(void *pvParameters) {
     Serial.println("Playback task started");
     for (;;){
         if(xSemaphoreTake(playbackSemaphore, portMAX_DELAY)){
-            playGuitarRTOS(currentSongPath.c_str());
+            playGuitarRTOS_Hammer(currentSongPath.c_str());
             xSemaphoreGive(playbackSemaphore);
         }
         // Serial.print("PlaybackTask stack left: ");
@@ -161,13 +161,13 @@ void setup() {
     if (result != pdPASS) {
         Serial.println("FileReceiver task failed to create");
     }
-    // xTaskCreate(testTask, "Test", 1024, NULL, 1, NULL);
+    //xTaskCreate(testTask, "Test", 1024, NULL, 1, NULL);
     result = xTaskCreate(
         heapMonitorTask,
         "Heap Monitor",
-        128,
+        64,
         NULL,
-        3, // Lowest priority
+        1, // Lowest priority
         &heapTaskHandle
     );   
     // // if (result != pdPASS){

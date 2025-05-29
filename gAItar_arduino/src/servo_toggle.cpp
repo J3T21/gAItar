@@ -33,6 +33,26 @@ void ServoController::damper() {
     servo.write(positionDamper);
     currentPosition = positionDamper;
 }
+void ServoController::release(int delayMs) {
+    // Move to the opposite of the current target position
+    int targetPosition = movingToB ? positionA : positionB;
+
+    if (delayMs > 0) {
+        // Gradual movement with delay to control speed
+        int step = (targetPosition > currentPosition) ? 1 : -1;
+        while (currentPosition != targetPosition) {
+            currentPosition += step;
+            servo.write(currentPosition); // Update the servo position
+            delay(delayMs);               // Wait for the delay before next move
+        }
+    } else {
+        // Immediate movement without delay
+        servo.write(targetPosition);
+        currentPosition = targetPosition;
+    }
+
+    // Note: We don't toggle movingToB here since this is a "release" back to previous position
+}
 
 
 PwmServoController::PwmServoController(int pwmPin, int posA, int posB, int minPulseMicros, int maxPulseMicros)
