@@ -5,6 +5,7 @@ import Controls from './components/Controls';
 import PlaybackInfo from './components/PlaybackInfo';
 import Upload from './components/Upload';
 import MidiGenerator from './components/GenMIDI';
+import VoiceToMIDI from './components/VoiceToMIDI';
 import { esp32 } from './api'; // Import the API instance
 
 const App = () => {
@@ -253,6 +254,10 @@ const App = () => {
               ))}
             </select>
           </div>
+          
+          <div className="voice-generator">
+            <VoiceToMIDI />
+          </div>
         </div>
 
         <div className="middle-column">
@@ -269,12 +274,12 @@ const App = () => {
             currentTrack={currentTrack}
             setCurrentTrack={setCurrentTrack}
             currentPlaylist={currentPlaylist}
-            setCurrentPlaylist={setCurrentPlaylist} // Pass setCurrentPlaylist here
+            setCurrentPlaylist={setCurrentPlaylist}
             setIsPlaying={setIsPlaying}
           />
-        <div className="generator">
-        <MidiGenerator />
-        </div>
+          <div className="generator">
+            <MidiGenerator />
+          </div>
         </div>
 
 

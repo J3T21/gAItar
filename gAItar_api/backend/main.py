@@ -3,10 +3,12 @@ import mido
 import torch
 import pickle
 import uuid
+import tempfile
+import os
 from io import BytesIO
 from mido import MidiFile, MidiTrack, merge_tracks
 from typing import List
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -14,6 +16,18 @@ from transformers import T5Tokenizer
 from huggingface_hub import hf_hub_download
 from model.transformer_model import Transformer
 from miditok import TokenizerConfig
+from basic_pitch.inference import predict
+from basic_pitch import ICASSP_2022_MODEL_PATH
+import pretty_midi
+import tensorflow as tf
+
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+    except RuntimeError as e:
+        print(f"GPU configuration error: {e}")
 
 app = FastAPI()
 
@@ -92,8 +106,10 @@ async def upload_midi(midi_file: UploadFile = File(...), title: str = Form(...),
         "events" : ir["events"]
     }
 
+
+
 @app.post("/generate-midi/")
-def generate_midi(request: PromptRequest):
+def generate_midi(request: PromptRequest, background_tasks: BackgroundTasks):
     prompt = request.prompt
     print(f"Generating MIDI for: {prompt}")
 
@@ -112,15 +128,30 @@ def generate_midi(request: PromptRequest):
         filename = f"output_{uuid.uuid4().hex[:8]}.mid"
         generated_midi.dump_midi(filename)
 
+        # Schedule file cleanup after response is sent
+        background_tasks.add_task(cleanup_file, filename)
 
-
-        return FileResponse(filename, media_type="audio/midi", filename=filename)
+        return FileResponse(
+            filename, 
+            media_type="audio/midi", 
+            filename=filename,
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
 
     except Exception as e:
+        # Clean up file if it was created but an error occurred
+        if 'filename' in locals() and os.path.exists(filename):
+            os.unlink(filename)
         raise HTTPException(status_code=500, detail=str(e))
 
-
-
+def cleanup_file(filename: str):
+    """Background task to clean up generated files"""
+    try:
+        if os.path.exists(filename):
+            os.unlink(filename)
+            print(f"Cleaned up file: {filename}")
+    except Exception as e:
+        print(f"Error cleaning up file {filename}: {e}")
 
 
 def extract_global_meta_messages(mid):
@@ -219,3 +250,66 @@ def process_midi_to_guitar_from_midi(midi_data, max_frets=10):
     duration_formatted = f"{duration_minutes}:{duration_seconds:02}"
 
     return { "duration": duration_formatted, "events": events }
+
+@app.post("/convert-audio-to-midi/")
+async def convert_audio_to_midi(background_tasks: BackgroundTasks, audio_file: UploadFile = File(...)):
+    """Convert audio file (MP3, WAV, etc.) to MIDI using basic_pitch with TensorFlow."""
+    
+    # Support multiple audio formats
+    supported_extensions = ['.mp3', '.wav', '.m4a', '.flac', '.ogg', '.webm']
+    file_extension = None
+    
+    for ext in supported_extensions:
+        if audio_file.filename.lower().endswith(ext):
+            file_extension = ext
+            break
+    
+    if not file_extension:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"File must be one of: {', '.join(supported_extensions)}"
+        )
+    
+    try:
+        # Read the uploaded audio file
+        audio_contents = await audio_file.read()
+        
+        # Create a temporary file to store the audio
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_audio:
+            temp_audio.write(audio_contents)
+            temp_audio_path = temp_audio.name
+        
+        # Use basic_pitch with TensorFlow runtime (don't specify model_or_model_path to use default TF model)
+        print(f"Converting audio file using TensorFlow runtime: {temp_audio_path}")
+        model_output, midi_data, note_events = predict(temp_audio_path)
+        print("Audio to MIDI conversion completed with TensorFlow")
+        
+        # Generate output filename
+        output_filename = f"converted_tf_{uuid.uuid4().hex[:8]}.mid"
+        
+        # Save the MIDI file
+        midi_data.write(output_filename)
+        print(f"MIDI file saved: {output_filename}")
+        
+        # Clean up temporary audio file immediately
+        os.unlink(temp_audio_path)
+        
+        # Schedule MIDI file cleanup after response is sent
+        background_tasks.add_task(cleanup_file, output_filename)
+        
+        # Return the MIDI file
+        return FileResponse(
+            output_filename, 
+            media_type="audio/midi", 
+            filename=output_filename,
+            headers={"Content-Disposition": f"attachment; filename={output_filename}"}
+        )
+        
+    except Exception as e:
+        print(f"Error in convert_audio_to_midi: {str(e)}")
+        # Clean up temporary files if they exist
+        if 'temp_audio_path' in locals() and os.path.exists(temp_audio_path):
+            os.unlink(temp_audio_path)
+        if 'output_filename' in locals() and os.path.exists(output_filename):
+            os.unlink(output_filename)
+        raise HTTPException(status_code=500, detail=f"Error converting audio to MIDI: {str(e)}")

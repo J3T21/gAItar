@@ -10,7 +10,8 @@ pydantic
 transformers
 huggingface-hub
 python-multipart
-basic_pitch
+basic_pitch[tf]
+pretty_midi
 einops
 st-moe-pytorch
 accelerate
@@ -18,3 +19,7 @@ jsonlines
 tqdm
 miditok
 sentencepiece
+soundfile
+librosa
+audioread
+tensorflow
