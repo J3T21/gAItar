@@ -276,7 +276,7 @@ const char* findFileRTOS(const String& title, const String& artist, const String
         }
 
         // Use StaticJsonDocument with fixed size
-        StaticJsonDocument<1024> doc;
+        JsonDocument doc;
         DeserializationError error = deserializeJson(doc, file);
         file.close(); // Always close immediately
 
@@ -285,12 +285,14 @@ const char* findFileRTOS(const String& title, const String& artist, const String
             Serial.print(nameBuffer);
             Serial.print(": ");
             Serial.println(error.c_str());
+            doc.clear();
             entry.close();
             continue;
         }
 
         if (!doc["title"].is<const char*>()) {
             Serial.println("no title field");
+            doc.clear();
             entry.close();
             continue;
         }
@@ -318,14 +320,14 @@ const char* findFileRTOS(const String& title, const String& artist, const String
                 // Found match
                 strncpy(matchingFilePath, fullFilePathBuffer, sizeof(matchingFilePath) - 1);
                 matchingFilePath[sizeof(matchingFilePath) - 1] = '\0';
-                
+                doc.clear();
                 entry.close();
                 directory.close();
                 xSemaphoreGive(sdSemaphore);
                 return matchingFilePath;
             }
         }
-
+        doc.clear();
         entry.close();
     }
 
@@ -529,12 +531,13 @@ void instructionReceiverRTOS(Uart &instrUart) {
                             const char* jsonPart = (char*)buffer + 6;
                         
                             // Parse JSON with StaticJsonDocument for memory safety
-                            StaticJsonDocument<256> doc;
+                            JsonDocument doc;
                             DeserializationError error = deserializeJson(doc, jsonPart);
                             if (error) {
                                 Serial.println("Failed to parse command JSON");
                                 Serial.print("Error: ");
                                 Serial.println(error.c_str());
+                                doc.clear();
                                 state = WAIT_FOR_HEADER;
                                 xSemaphoreGive(playbackSemaphore);
                                 return;
@@ -581,6 +584,7 @@ void instructionReceiverRTOS(Uart &instrUart) {
                                     Serial.println("File not found with matching metadata");
                                 }
                             }
+                            doc.clear();
                         } else if (strncmp((char*)buffer, "Pause", 5) == 0) {
                             isPaused = true;
                             pauseOffset = millis() - startTime;

@@ -23,7 +23,9 @@ const int fretPins[NUM_FRETS][3] = {
     {clkPin7, dataPin7, clearPin7},
     {clkPin8, dataPin8, clearPin8},
     {clkPin9, dataPin9, clearPin9},
-    {clkPin10, dataPin10, clearPin10}
+    {clkPin10, dataPin10, clearPin10},
+    {clkPin11, dataPin11, clearPin11},
+    {clkPin12, dataPin12, clearPin12}
 };
 
 const byte stringOrder[6] = {

@@ -26,8 +26,6 @@ void setupTestServer(AsyncWebServer& server) {
   auto handleRequest = [](const String &label) {
     return [label](AsyncWebServerRequest *request) {
       Serial.println(label);
-      AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", label + " command received");
-      request->send(response);
       String artist, title, genre;
       if (request->hasParam("artist", true)) {
         artist = request->getParam("artist", true)->value();
@@ -42,6 +40,8 @@ void setupTestServer(AsyncWebServer& server) {
         Serial.printf("Genre: %s\n", genre.c_str());
       }
       filePath = "/" +genre + "/" + artist + "/" + title + ".json";
+      AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", label + " command received");
+      request->send(response);
     };
   };
 
@@ -122,21 +122,20 @@ void setupTestServer(AsyncWebServer& server) {
   auto handleGet = [](const String &label) {
     return [label](AsyncWebServerRequest *request) {
         Serial.println("Processing GET request: " + label);
-
         // Send instruction to SAMD
         instructionToSAMD(reinterpret_cast<const uint8_t *>(label.c_str()), label.length());
 
         // Wait for response from SAMD
         String uartResponse = "";
         unsigned long startTime = millis();
-        while (millis() - startTime < 2000) { // 2-second timeout
+        while (millis() - startTime < 1000) { // 1-second timeout
             if (instruction_uart.available()) {
                 uartResponse += instruction_uart.readString();
             }
         }
 
         if (uartResponse.isEmpty()) {
-            uartResponse = "No response from SAMD.";
+            uartResponse = "NA";
         }
         Serial.println("uartResponse" + uartResponse);
         // Send the UART response back to the HTTP request

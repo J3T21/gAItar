@@ -5,7 +5,7 @@
 #include "servo_toggle.h"
 
 #define BAUDRATE 115200
-#define NUM_FRETS 10 //number of implemented frets
+#define NUM_FRETS 12 //number of implemented frets
 
 #define string1 0b00000001 // Initialize string1 LSB first
 #define string2 0b00000010 // Initialize string2 LSB first
@@ -53,6 +53,14 @@
 #define clearPin10 48
 #define clkPin10 46
 #define dataPin10 50
+
+#define clearPin11 A14
+#define clkPin11 A15
+#define dataPin11 A13
+
+#define clearPin12 A11
+#define clkPin12 A12
+#define dataPin12 A10
 
 extern Uart &dataUart; // Define the UART interface for data transfer
 extern Uart &instructionUart; // Define the UART interface for instructions

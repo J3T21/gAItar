@@ -717,15 +717,16 @@ void playGuitarRTOS_Hammer(const char* filePath) {
     static JsonDocument doc;
     static JsonArray events;
     static bool fileLoaded = false;
-    static const unsigned long SERVO_THRESH = 300;
+    static const unsigned long SERVO_THRESH = 100;
 
     if (!isPlaying || isPaused) {
         // If not playing or paused, cleanup and return
         if (xSemaphoreTake(sdSemaphore, portMAX_DELAY)){
             if (fileLoaded && file) {
-            file.close();
-            fileLoaded = false;
-            }
+                doc.clear();
+                file.close();
+                fileLoaded = false;
+                }
             xSemaphoreGive(sdSemaphore);
         }
         clearAllFrets();
@@ -735,6 +736,7 @@ void playGuitarRTOS_Hammer(const char* filePath) {
     // Only load the file and parse JSON once per song
     if (!fileLoaded || newSongRequested) {
         if (xSemaphoreTake(sdSemaphore, portMAX_DELAY)){
+            doc.clear();
             file = sd.open(currentSongPath.c_str(), FILE_READ);
             if (!file) {
                 xSemaphoreGive(sdSemaphore);
@@ -748,6 +750,7 @@ void playGuitarRTOS_Hammer(const char* filePath) {
             if (error) {
                 Serial.print("Failed to parse JSON: ");
                 Serial.println(error.c_str());
+                doc.clear();
                 isPlaying = false;
                 fileLoaded = false;
                 return;
@@ -901,6 +904,7 @@ void playGuitarRTOS_Hammer(const char* filePath) {
         }
     } else {
         // Song finished
+        doc.clear();
         currentSongPath = "";
         isPlaying = false;
         fileLoaded = false;

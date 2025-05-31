@@ -83,7 +83,7 @@ async def test_cors():
 @app.post("/upload-midi", response_model=GuitarMidiEvents)
 async def upload_midi(midi_file: UploadFile = File(...), title: str = Form(...), artist: str = Form(...), genre: str = Form(...)):
     contents = await midi_file.read()
-    ir = process_midi_to_guitar_from_midi(contents)
+    ir = process_midi_to_guitar_from_midi(contents, max_frets=12)
     return {
         "title": title,
         "artist": artist,

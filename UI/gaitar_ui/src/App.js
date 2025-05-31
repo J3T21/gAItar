@@ -23,54 +23,68 @@ const App = () => {
   const uniqueGenres = [...new Set(songs.map(song => song.genre))].sort();
   const fetchSongsCalled = useRef(false); // Ref to track if fetchSongs has been called
 
-  useEffect(() => {
-    const fetchSongs = async () => {
-      if (fetchSongsCalled.current) return; // Prevent multiple calls
-      fetchSongsCalled.current = true; // Mark as called
+ useEffect(() => {
+  const fetchSongs = async () => {
+    if (fetchSongsCalled.current) return; // Prevent multiple calls
+    fetchSongsCalled.current = true; // Mark as called
 
-      try {
-        const response = await esp32.get('/existing-songs'); // Adjust the endpoint if necessary
-        console.log('Fetched songs from ESP32:', response.data);
-
-        // Split the response string into an array of paths
-        const paths = response.data.split('\n').filter((path) => path.trim() !== '');
-
-        if (Array.isArray(paths)) {
-          const parsedSongs = paths.map((path) => {
-            // Split the path into parts
-            const parts = path.split('/');
-            const genreRaw = parts[1] || 'Unknown'; // Extract genre
-            const artistRaw = parts[2] || 'Unknown'; // Extract artist
-            const titleWithExtension = parts[3] || 'Unknown'; // Extract title with extension
-            const titleRaw = titleWithExtension.replace('.json', ''); // Remove the .json extension
-
-            // Enhanced unsanitize function to handle Windows line endings
-            const unsanitize = (str) => {
-              return str.replace(/_/g, ' ')           // Replace underscores with spaces
-                       .replace(/[\r\n\t\f\v]/g, ' ') // Replace control characters with spaces
-                       .replace(/\s+/g, ' ')           // Collapse multiple spaces
-                       .trim();                        // Remove leading/trailing whitespace
-            };
-
-            const genre = unsanitize(genreRaw);
-            const artist = unsanitize(artistRaw);
-            const title = unsanitize(titleRaw);
-
-            return { title, artist, genre }; // Return the parsed song object with spaces
-          });
-
-          setSongs(parsedSongs); // Update the songs state with the parsed data
-        } else {
-          console.error('Unexpected response format:', response.data);
-        }
-      } catch (error) {
-        console.error('Error fetching songs from ESP32:', error);
+    try {
+      const response = await esp32.get('/existing-songs'); // Adjust the endpoint if necessary
+      console.log('Fetched songs from ESP32:', response.data);
+      if (response.data == ''){
+        console.error('No songs found on SD card');
+        return;
       }
-    };
 
-    fetchSongs();
-  }, []); // Empty dependency array ensures this runs only once
+      // Split the response string into an array of paths
+      const paths = response.data.split('\n').filter((path) => path.trim() !== '');
 
+      if (Array.isArray(paths)) {
+        const parsedSongs = paths.map((path) => {
+          // Split the path into parts
+          const parts = path.split('/');
+          const genreRaw = parts[1] || null; // Extract genre
+          const artistRaw = parts[2] || null; // Extract artist
+          const titleWithExtension = parts[3] || null; // Extract title with extension
+          
+          // Skip if any required part is missing - CHECK BEFORE PROCESSING
+          if (!genreRaw || !artistRaw || !titleWithExtension) {
+            return null; // Return null for invalid entries
+          }
+          
+          const titleRaw = titleWithExtension.replace('.json', ''); // Remove the .json extension - SAFE NOW
+
+          // Enhanced unsanitize function to handle Windows line endings
+          const unsanitize = (str) => {
+            return str.replace(/_/g, ' ')           // Replace underscores with spaces
+                     .replace(/[\r\n\t\f\v]/g, ' ') // Replace control characters with spaces
+                     .replace(/\s+/g, ' ')           // Collapse multiple spaces
+                     .trim();                        // Remove leading/trailing whitespace
+          };
+
+          const genre = unsanitize(genreRaw);
+          const artist = unsanitize(artistRaw);
+          const title = unsanitize(titleRaw);
+
+          // Additional check to ensure all fields have content after unsanitizing
+          if (!genre || !artist || !title) {
+            return null;
+          }
+
+          return { title, artist, genre }; // Return the parsed song object with spaces
+        }).filter(song => song !== null); // Filter out null entries
+
+        setSongs(parsedSongs); // Update the songs state with the parsed data
+      } else {
+        console.error('Unexpected response format:', response.data);
+      }
+    } catch (error) {
+      console.error('Error fetching songs from ESP32:', error);
+    }
+  };
+
+  fetchSongs();
+}, []); // Empty dependency array ensures this runs only once
   useEffect(() => {
     // Filter songs based on the query, selected artist, and selected genre
     const matchingSuggestions = songs.filter((song) => {
