@@ -29,7 +29,7 @@ TaskHandle_t fileReceiverTaskHandle;
 
 void fileReceiverTask(void *pvParameters){
     while (true){
-        fileReceiverRTOS_new(dataUart);
+        fileReceiverRTOS_char(dataUart);
         //vTaskDelay(1 / portTICK_PERIOD_MS);
         taskYIELD();
         // Serial.print("fileTask stack left: ");
@@ -60,12 +60,12 @@ void playbackTask(void *pvParameters) {
     Serial.println("Playback task started");
     for (;;){
         if(xSemaphoreTake(playbackSemaphore, portMAX_DELAY)){
-            playGuitarRTOS_Hammer(currentSongPath);
+            playGuitarRTOS_safe(currentSongPath);
             xSemaphoreGive(playbackSemaphore);
         }
         //Serial.print("PlaybackTask stack left: ");
         // Serial.println(uxTaskGetStackHighWaterMark(NULL));
-        vTaskDelay(1 / portTICK_PERIOD_MS);
+        vTaskDelay(2 / portTICK_PERIOD_MS);
     }
 
 }
@@ -137,7 +137,7 @@ void setup() {
     result = xTaskCreate(
         playbackTask, // Function to implement the task
         "Playback Task", // Name of the task
-        1024, // Stack size in words
+        2048, // Stack size in words
         NULL, // Task input parameter
         2, // Priority of the task
         &playbackTaskHandle); // Task handle

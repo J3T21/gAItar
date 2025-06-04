@@ -36,66 +36,91 @@ const App = () => {
   }, [songs]);
 
   useEffect(() => {
-  const fetchSongs = async () => {
-    if (fetchSongsCalled.current) return; // Prevent multiple calls
-    fetchSongsCalled.current = true; // Mark as called
-
+  const fetchSongs = async (retryCount = 0) => {
+    const maxRetries = 5;
+    const retryDelay = 2000; // 2 seconds
+    
     try {
-      const response = await esp32.get('/existing-songs'); // Adjust the endpoint if necessary
+      console.log(`Attempting to fetch songs (attempt ${retryCount + 1}/${maxRetries + 1})`);
+      const response = await esp32.get('/existing-songs');
       console.log('Fetched songs from ESP32:', response.data);
-      if (response.data == ''){
-        console.error('No songs found on SD card');
-        return;
+      
+      if (response.data === '' || !response.data) {
+        console.log('No songs found on SD card, will retry...');
+        if (retryCount < maxRetries) {
+          setTimeout(() => fetchSongs(retryCount + 1), retryDelay);
+          return;
+        } else {
+          console.error('No songs found after maximum retries');
+          return;
+        }
       }
 
       // Split the response string into an array of paths
       const paths = response.data.split('\n').filter((path) => path.trim() !== '');
 
-      if (Array.isArray(paths)) {
+      if (Array.isArray(paths) && paths.length > 0) {
         const parsedSongs = paths.map((path) => {
           // Split the path into parts
           const parts = path.split('/');
-          const genreRaw = parts[1] || null; // Extract genre
-          const artistRaw = parts[2] || null; // Extract artist
-          const titleWithExtension = parts[3] || null; // Extract title with extension
+          const genreRaw = parts[1] || null;
+          const artistRaw = parts[2] || null;
+          const titleWithExtension = parts[3] || null;
           
-          // Skip if any required part is missing - CHECK BEFORE PROCESSING
           if (!genreRaw || !artistRaw || !titleWithExtension) {
-            return null; // Return null for invalid entries
+            return null;
           }
           
-          const titleRaw = titleWithExtension.replace('.json', ''); // Remove the .json extension - SAFE NOW
+          const titleRaw = titleWithExtension.replace('.json', '')
 
-          // Enhanced unsanitize function to handle Windows line endings
           const unsanitize = (str) => {
-            return str.replace(/_/g, ' ')           // Replace underscores with spaces
-                     .replace(/[\r\n\t\f\v]/g, ' ') // Replace control characters with spaces
-                     .replace(/\s+/g, ' ')           // Collapse multiple spaces
-                     .trim();                        // Remove leading/trailing whitespace
+            return str.replace(/_/g, ' ')
+                     .replace(/[\r\n\t\f\v]/g, ' ')
+                     .replace(/\s+/g, ' ')
+                     .trim();
           };
 
           const genre = unsanitize(genreRaw);
           const artist = unsanitize(artistRaw);
           const title = unsanitize(titleRaw);
 
-          // Additional check to ensure all fields have content after unsanitizing
           if (!genre || !artist || !title) {
             return null;
           }
 
-          return { title, artist, genre }; // Return the parsed song object with spaces
-        }).filter(song => song !== null); // Filter out null entries
+          return { title, artist, genre };
+        }).filter(song => song !== null);
 
-        setSongs(parsedSongs); // Update the songs state with the parsed data
+        if (parsedSongs.length > 0) {
+          setSongs(parsedSongs);
+          console.log(`Successfully loaded ${parsedSongs.length} songs`);
+        } else {
+          console.log('No valid songs parsed, will retry...');
+          if (retryCount < maxRetries) {
+            setTimeout(() => fetchSongs(retryCount + 1), retryDelay);
+          }
+        }
       } else {
-        console.error('Unexpected response format:', response.data);
+        console.log('Invalid response format, will retry...');
+        if (retryCount < maxRetries) {
+          setTimeout(() => fetchSongs(retryCount + 1), retryDelay);
+        }
       }
     } catch (error) {
-      console.error('Error fetching songs from ESP32:', error);
+      console.error(`Error fetching songs from ESP32 (attempt ${retryCount + 1}):`, error);
+      if (retryCount < maxRetries) {
+        console.log(`Retrying in ${retryDelay}ms...`);
+        setTimeout(() => fetchSongs(retryCount + 1), retryDelay);
+      } else {
+        console.error('Failed to fetch songs after maximum retries');
+      }
     }
   };
 
-  fetchSongs();
+  if (!fetchSongsCalled.current) {
+    fetchSongsCalled.current = true;
+    fetchSongs();
+  }
 }, []); // Empty dependency array ensures this runs only once
   useEffect(() => {
     // Filter songs based on the query, selected artist, and selected genre
@@ -290,26 +315,29 @@ const handleVoiceCommand = useCallback((action, data) => {
       break;
       
     case 'playSpecificSong':
-      if (data) {
+      if (data && typeof data === 'string') { // Add type check here
         console.log('Voice: Looking for song with name:', data);
-        console.log('Available songs:', currentSongs.map(s => `"${s.title}" by ${s.artist}`)); // Use currentSongs!
+        console.log('Available songs:', currentSongs.map(s => `"${s.title}" by ${s.artist}`));
+        
+        // Convert data to string just in case
+        const searchTerm = String(data).toLowerCase();
         
         // Try exact title match first (case-insensitive)
         let foundSong = currentSongs.find(song => 
-          song.title.toLowerCase() === data.toLowerCase()
+          song.title.toLowerCase() === searchTerm
         );
         
         // If no exact match, try partial matching (case-insensitive)
         if (!foundSong) {
           foundSong = currentSongs.find(song => 
-            song.title.toLowerCase().includes(data.toLowerCase()) ||
-            song.artist.toLowerCase().includes(data.toLowerCase())
+            song.title.toLowerCase().includes(searchTerm) ||
+            song.artist.toLowerCase().includes(searchTerm)
           );
         }
         
         // If still no match, try word-by-word matching (case-insensitive)
         if (!foundSong) {
-          const searchWords = data.toLowerCase().split(' ');
+          const searchWords = searchTerm.split(' ');
           foundSong = currentSongs.find(song => {
             const titleWords = song.title.toLowerCase().split(' ');
             const artistWords = song.artist.toLowerCase().split(' ');
@@ -324,7 +352,6 @@ const handleVoiceCommand = useCallback((action, data) => {
         if (!foundSong) {
           foundSong = currentSongs.find(song => {
             const songTitle = song.title.toLowerCase();
-            const searchTerm = data.toLowerCase();
             
             if (songTitle.includes(searchTerm)) return true;
             if (songTitle.startsWith(searchTerm)) return true;
@@ -373,9 +400,12 @@ const handleVoiceCommand = useCallback((action, data) => {
             console.log(`${index + 1}. "${song.title}" by ${song.artist} (${song.genre})`);
           });
           
-          setQuery(data);
+          setQuery(String(data)); // Convert to string here too
           setDropdownActive(true);
         }
+      } else {
+        console.error('Voice: Invalid data received for playSpecificSong:', data, typeof data);
+        console.log('Voice: Expected string, got:', data);
       }
       break;
       

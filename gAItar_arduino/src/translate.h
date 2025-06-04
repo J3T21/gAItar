@@ -12,7 +12,7 @@ struct Event {
     int fret;
 };
 
-size_t calculateMaxFileSize();
+
 void playGuitarEvents();  // Function declaration
 
 void playGuitarEventsOpen();  // Function declaration
@@ -25,13 +25,8 @@ void playGuitarRTOS_Hammer(const char* filePath);
 void playFrets();
 void sendPlaybackStatus(Uart &instrUart, JsonArray *eventsPtr = nullptr);
 // Add these declarations to translate.h
-void playGuitarRTOS_Stream(const char* filePath);
-bool seekToEventsArray(File& file);
-void loadNextEventBatch(File& file, struct Event* eventBuffer, size_t& bufferSize);
-bool parseEventLine(const String& line, struct Event& event);
-unsigned long calculateNoteDuration(struct Event* eventBuffer, size_t currentIndex, size_t bufferSize, int string, unsigned long currentTime);
-void processGuitarEvent(int string, int fret, bool moveServo);
-void sendPlaybackStatusStreaming(Uart &instrUart);
+void sendPlaybackStatusSafe(Uart &instrUart, unsigned long totalTime);
+void playGuitarRTOS_safe(const char* filePath); 
 
 // If needed elsewhere, also expose time and note state:
 extern unsigned long currentTime;

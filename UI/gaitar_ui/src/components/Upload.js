@@ -6,9 +6,12 @@ const Upload = ({
   artists = [], 
   setTrackMetadata, 
   onUpload, 
-  setSongs,
+  setSongs: updateGlobalSongs, // Rename to avoid confusion
   onVoiceToMidiUpload
 }) => {
+  // Keep local songs state for upload component functionality
+  const [songs, setSongs] = useState([]);
+  
   const [file, setFile] = useState(null);
   const [genre, setGenre] = useState('');
   const [title, setTitle] = useState('');
@@ -35,6 +38,9 @@ const Upload = ({
   const reconnectTimeoutRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
   const uploadTimeoutRef = useRef(null);
+
+  // Add a ref to store the original upload data
+  const uploadDataRef = useRef(null);
 
   // Initialize WebSocket connection with unlimited reconnection attempts
   useEffect(() => {
@@ -63,7 +69,6 @@ const Upload = ({
         wsRef.current.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            // console.log('WebSocket progress update:', data); // Comment out or remove
             
             // Clear upload timeout since we received a message
             if (uploadTimeoutRef.current) {
@@ -83,19 +88,26 @@ const Upload = ({
                 setIsUploading(false);
                 setUploadPercentage(100);
                 
-                // Call handleUploadSuccess if we have the track metadata
-                handleUploadSuccess({
-                  title: title,
-                  artist: artist,
-                  genre: genre,
-                  duration_formatted: '00:00' // You might want to get this from the ESP32 response
-                });
+                // Use the stored upload data instead of current state
+                if (uploadDataRef.current) {
+                  console.log('Upload completed, using stored data:', uploadDataRef.current);
+                  handleUploadSuccess({
+                    title: uploadDataRef.current.title,
+                    artist: uploadDataRef.current.artist,
+                    genre: uploadDataRef.current.genre,
+                    duration_formatted: '00:00'
+                  });
+                } else {
+                  console.error('Upload completed but no stored data found!');
+                }
                 
               } else if (data.stage === 'Error' || data.message.includes('failed')) {
                 setUploadStatus('failed');
                 setUploadProgress('Upload failed: ' + data.message);
                 setError('Upload failed: ' + data.message);
                 setIsUploading(false);
+                // Clear the stored data on failure
+                uploadDataRef.current = null;
               } else {
                 // Reset upload timeout for ongoing uploads
                 setUploadTimeout();
@@ -230,6 +242,14 @@ const Upload = ({
       return;
     }
     
+    // Store the upload data in a ref so it persists during the upload process
+    uploadDataRef.current = {
+      title: title,
+      artist: artist,
+      genre: genre,
+      fileName: file.name
+    };
+    
     setError('');
     setUploadMessage('');
     setIsUploading(true);
@@ -238,6 +258,7 @@ const Upload = ({
     setUploadPercentage(0);
 
     console.log('Uploading file:', file);
+    console.log('Upload data stored:', uploadDataRef.current);
     
     try {
       // Step 1: Send to backend for processing
@@ -367,24 +388,52 @@ const Upload = ({
 
   // Handle successful upload completion (called when WebSocket confirms success)
   const handleUploadSuccess = (responseData) => {
+    console.log('handleUploadSuccess called with:', responseData);
+    
     // Clear upload timeout
     if (uploadTimeoutRef.current) {
       clearTimeout(uploadTimeoutRef.current);
       uploadTimeoutRef.current = null;
     }
 
-    // Add to songs list
-    setSongs((prevSongs) => [
-      ...prevSongs,
-      {
-        title: responseData.title,
-        artist: responseData.artist,
-        genre: responseData.genre,
-        duration_formatted: responseData.duration_formatted,
-      },
-    ]);
+    // Validate the response data
+    if (!responseData.title || !responseData.artist || !responseData.genre) {
+      console.error('Invalid response data in handleUploadSuccess:', responseData);
+      setError('Upload completed but song data is incomplete');
+      return;
+    }
 
-    // Clear the input fields
+    const newSong = {
+      title: responseData.title,
+      artist: responseData.artist,
+      genre: responseData.genre,
+      duration_formatted: responseData.duration_formatted || '00:00',
+    };
+
+    console.log('Creating new song object:', newSong);
+
+    // Update local songs list (for upload component dropdowns)
+    setSongs((prevSongs) => {
+      console.log('Updating local songs list, previous count:', prevSongs.length);
+      const updated = [...prevSongs, newSong];
+      console.log('Updated local songs list, new count:', updated.length);
+      return updated;
+    });
+
+    // Update the main App.js songs list
+    if (updateGlobalSongs && typeof updateGlobalSongs === 'function') {
+      console.log('Updating global songs list');
+      updateGlobalSongs((prevSongs) => {
+        console.log('Global songs update, previous count:', prevSongs.length);
+        const updated = [...prevSongs, newSong];
+        console.log('Global songs update, new count:', updated.length);
+        return updated;
+      });
+    } else {
+      console.error('updateGlobalSongs function not available:', typeof updateGlobalSongs);
+    }
+
+    // Clear the input fields AFTER storing the data
     setFile(null);
     setGenre('');
     setTitle('');
@@ -392,9 +441,12 @@ const Upload = ({
     setArtistSearchTerm('');
     setSearchTerm('');
     setIsCustomFile(false);
+    
+    // Clear the stored upload data
+    uploadDataRef.current = null;
 
-    console.log('Song added to the list:', responseData.title);
-    onUpload(responseData.title, genre);
+    console.log('Song added to both local and global lists:', responseData.title);
+    onUpload(responseData.title, responseData.genre);
   };
 
   // Cancel upload function
