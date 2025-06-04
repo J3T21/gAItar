@@ -1,20 +1,21 @@
 // gaitar_ui/src/components/VoiceToMIDI.js
-import React, { useState, useRef } from 'react';
-import { FaMicrophone, FaStop, FaPlay, FaDownload, FaMusic } from 'react-icons/fa';
+import React, { useState, useRef, forwardRef, useImperativeHandle } from 'react';
+import { FaMicrophone, FaStop, FaPlay, FaDownload, FaMusic, FaUpload } from 'react-icons/fa';
 import { backend_api } from '../api';
 import { Midi } from '@tonejs/midi';
 import * as Tone from 'tone';
 
-const VoiceToMIDI = () => {
+  const VoiceToMIDI = forwardRef(({ onUploadToForm }, ref) => {
   const [isRecording, setIsRecording] = useState(false);
   const [audioBlob, setAudioBlob] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
   const [midiUrl, setMidiUrl] = useState(null);
-  const [midiBlob, setMidiBlob] = useState(null); // Store MIDI blob for playback
+  const [midiBlob, setMidiBlob] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [recordingTime, setRecordingTime] = useState(0);
   const [isPlayingMidi, setIsPlayingMidi] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState(''); // Add upload message state
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -37,6 +38,7 @@ const VoiceToMIDI = () => {
       setAudioUrl(null);
       setMidiUrl(null);
       setMidiBlob(null);
+      setUploadMessage(''); // Clear upload message
       audioChunksRef.current = [];
 
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -183,6 +185,7 @@ const VoiceToMIDI = () => {
     setError(null);
     setMidiUrl(null);
     setMidiBlob(null);
+    setUploadMessage(''); // Clear upload message
 
     try {
       // Convert to WAV format
@@ -305,6 +308,27 @@ const VoiceToMIDI = () => {
     setIsPlayingMidi(false);
   };
 
+  // Convert MIDI blob to File and send to Upload component
+  const uploadMidiToForm = () => {
+    if (!midiBlob) {
+      setError('No MIDI file to upload');
+      return;
+    }
+
+    try {
+      // Convert blob to File object
+      const midiFile = new File([midiBlob], 'voice-recording.mid', { type: 'audio/midi' });
+      
+      // Call the callback function to send file to Upload component
+      if (onUploadToForm) {
+        onUploadToForm(midiFile);
+      }
+    } catch (err) {
+      console.error('Error uploading MIDI to form:', err);
+      setError('Failed to upload MIDI to form');
+    }
+  };
+
   // Format recording time
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -323,9 +347,16 @@ const VoiceToMIDI = () => {
     }
   };
 
+  // Expose methods to parent component
+  useImperativeHandle(ref, () => ({
+    startRecording,
+    stopRecording,
+    convertToMIDI
+  }));
+
   return (
     <div className="voice-to-midi">
-      <h3>Voice/Whistle to MIDI</h3>
+      <h3>Voice to MIDI</h3>
       
       {!isRecordingSupported && (
         <div className="error-message">
@@ -384,7 +415,7 @@ const VoiceToMIDI = () => {
 
       {midiUrl && (
         <div className="midi-result">
-          <p>✅ MIDI conversion successful!</p>
+          <p>MIDI conversion successful!</p>
           
           <div className="midi-playback-controls">
             <button 
@@ -396,19 +427,19 @@ const VoiceToMIDI = () => {
               {isPlayingMidi ? 'Stop MIDI' : 'Play MIDI'}
             </button>
             
-            <a
-              href={midiUrl}
-              download="voice-recording.mid"
-              className="download-midi-button"
+            <button
+              onClick={uploadMidiToForm}
+              className="upload-midi-button"
+              disabled={!midiBlob}
             >
-              <FaDownload />
-              Download MIDI
-            </a>
+              <FaUpload />
+              Upload to Form
+            </button>
           </div>
         </div>
       )}
     </div>
   );
-};
+});
 
 export default VoiceToMIDI;

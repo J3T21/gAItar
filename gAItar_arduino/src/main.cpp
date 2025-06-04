@@ -1,8 +1,5 @@
 #include <Arduino.h>
 #include <Servo.h>
-#include <iostream>
-#include <vector>
-#include <tuple>
 #include <SPI.h>
 #include <SdFat.h>
 #include <FreeRTOS_SAMD51.h>
@@ -17,7 +14,7 @@
 volatile bool isPlaying = false;
 volatile bool isPaused = false;
 volatile bool newSongRequested = false;
-String currentSongPath = "";
+char currentSongPath[128] = "";
 size_t currentEventIndex = 0;
 unsigned long startTime = 0;
 unsigned long pauseOffset = 0;
@@ -63,10 +60,10 @@ void playbackTask(void *pvParameters) {
     Serial.println("Playback task started");
     for (;;){
         if(xSemaphoreTake(playbackSemaphore, portMAX_DELAY)){
-            playGuitarRTOS_Hammer(currentSongPath.c_str());
+            playGuitarRTOS_Hammer(currentSongPath);
             xSemaphoreGive(playbackSemaphore);
         }
-        // Serial.print("PlaybackTask stack left: ");
+        //Serial.print("PlaybackTask stack left: ");
         // Serial.println(uxTaskGetStackHighWaterMark(NULL));
         vTaskDelay(1 / portTICK_PERIOD_MS);
     }
@@ -92,9 +89,6 @@ void setup() {
     Serial.begin(115200); // Initialize serial communication or debugging
     dataUart.begin(BAUDRATE); // Initialize dataUart for UART communication
     instructionUart.begin(BAUDRATE); //intialize instructionUart for UART communication
-    while (!Serial) {
-        ; // Wait for serial port to connect. Needed for native USB port only
-    }
     for (int i = 0; i < NUM_FRETS; i++)
     {
         pinMode(fretPins[i][0], OUTPUT); // Set clock pin as output
@@ -114,6 +108,8 @@ void setup() {
 
     delay(100);
 
+
+    
     playbackSemaphore = xSemaphoreCreateMutex();
     sdSemaphore = xSemaphoreCreateMutex();
     if (sdSemaphore == NULL) {
@@ -153,7 +149,7 @@ void setup() {
     result = xTaskCreate(
         fileReceiverTask,
         "FileReceiver Task",
-        2048, // Stack size in words (adjust as needed)
+        1024, // Stack size in words (adjust as needed)
         NULL,
         1, // Priority (set appropriately for your system)
         &fileReceiverTaskHandle
@@ -165,7 +161,7 @@ void setup() {
     result = xTaskCreate(
         heapMonitorTask,
         "Heap Monitor",
-        64,
+        256,
         NULL,
         1, // Lowest priority
         &heapTaskHandle
@@ -177,6 +173,8 @@ void setup() {
     Serial.println(xPortGetFreeHeapSize());
     vTaskStartScheduler();
 
+    
+
 }
 
 void loop() {
@@ -184,10 +182,10 @@ void loop() {
     // testFret(1,1000,10);
 //   fileReceiver_state(dataUart); // Call the file receiver function to handle incoming data
 //   instructionReceiverJson(instructionUart); // Call the instruction receiver function to handle incoming instructions
+   //testSerialControlservo();
+  //testFret(1, 500, 12); // Test the fret function with a range of frets
   //testSerialControlservo();
-  //testFret(1, 500, 10); // Test the fret function with a range of frets
-  //testSerialControlservo();
-
+    //testCombined(1,500);
   //playGuitarEventsOpen();
   //playGuitarFromFile("/Ragtime/Joplin/Entertainer.json");
 //   if (isPlaying_glob){

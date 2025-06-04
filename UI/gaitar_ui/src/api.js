@@ -6,7 +6,7 @@ const backend_api = axios.create({
 });
 
 const esp32 = axios.create({
-    baseURL: 'http://192.168.4.1', // Update with your ESP32 URL
+    baseURL: 'http://10.245.188.200', // Update with your ESP32 URL
 });
 
 export { backend_api, esp32 };

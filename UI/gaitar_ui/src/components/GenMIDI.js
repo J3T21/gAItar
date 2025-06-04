@@ -2,17 +2,20 @@ import { backend_api, esp32 } from '../api'; // Import the API instance
 import React, { useState } from 'react';
 import { Midi } from '@tonejs/midi';
 import * as Tone from 'tone';
+import { FaMusic, FaUpload } from 'react-icons/fa'; // Add FaUpload import
 
-export default function MidiGenerator() {
+export default function MidiGenerator({ onUploadToForm }) { // Add prop for upload callback
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [midiUrl, setMidiUrl] = useState(null);
+  const [midiBlob, setMidiBlob] = useState(null); // Add midiBlob state for upload
   const [error, setError] = useState(null);
 
   const handleGenerate = async () => {
     setLoading(true);
     setError(null);
     setMidiUrl(null);
+    setMidiBlob(null); // Clear previous blob
 
     try {
       const response = await backend_api.post(
@@ -23,12 +26,34 @@ export default function MidiGenerator() {
 
       const blob = new Blob([response.data], { type: 'audio/midi' });
       const url = URL.createObjectURL(blob);
+      setMidiBlob(blob); // Store blob for upload
       setMidiUrl(url);
     } catch (err) {
       setError('Failed to generate MIDI.');
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Convert MIDI blob to File and send to Upload component
+  const uploadMidiToForm = () => {
+    if (!midiBlob) {
+      setError('No MIDI file to upload');
+      return;
+    }
+
+    try {
+      // Convert blob to File object
+      const midiFile = new File([midiBlob], 'generated-midi.mid', { type: 'audio/midi' });
+      
+      // Call the callback function to send file to Upload component
+      if (onUploadToForm) {
+        onUploadToForm(midiFile);
+      }
+    } catch (err) {
+      console.error('Error uploading MIDI to form:', err);
+      setError('Failed to upload MIDI to form');
     }
   };
 
@@ -83,15 +108,18 @@ export default function MidiGenerator() {
             onClick={playMidi}
             className="midi-play-button"
           >
+            <FaMusic />
             Play MIDI
           </button>
-          <a
-            href={midiUrl}
-            download="generated.mid"
-            className="midi-download-link"
+          
+          <button
+            onClick={uploadMidiToForm}
+            className="upload-midi-button"
+            disabled={!midiBlob}
           >
-            Download MIDI
-          </a>
+            <FaUpload />
+            Upload to Form
+          </button>
         </div>
       )}
 

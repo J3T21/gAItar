@@ -8,16 +8,16 @@
 extern volatile bool isPlaying;
 extern volatile bool isPaused;
 extern volatile bool newSongRequested;
-extern String currentSongPath;
+extern char currentSongPath[128];
 extern size_t currentEventIndex;
 extern unsigned long startTime;
 extern unsigned long pauseOffset;
 extern SemaphoreHandle_t playbackSemaphore;
 extern SemaphoreHandle_t sdSemaphore;
 
-String prevTitle = "";
-String prevArtist = "";
-String prevGenre = "";
+char prevTitle[64] = "";
+char prevArtist[64] = "";
+char prevGenre[64] = "";
 
 void fileReceiver(Uart &fileUart) {
     static size_t fileSize = 0;
@@ -336,12 +336,14 @@ const char* findFileRTOS(const String& title, const String& artist, const String
     return nullptr;
 }
 
-const char* findFileSimple(const String& title, const String& artist, const String& genre) {
+
+
+const char* findFileSimple(const char* title, const char* artist, const char* genre) {
     static char matchingFilePath[128];
     
     // Construct the full file path: /genre/artist/title.json
     snprintf(matchingFilePath, sizeof(matchingFilePath), "/%s/%s/%s.json", 
-             genre.c_str(), artist.c_str(), title.c_str());
+             genre, artist, title);  // ← Remove .c_str() calls
 
     // Debug output
     Serial.print("Checking if file exists: ");
@@ -548,9 +550,9 @@ void instructionReceiverRTOS(Uart &instrUart) {
                             const char* rawArtist = doc["artist"];
                             const char* rawGenre = doc["genre"];
 
-                            bool isSameSong = (strcmp(rawTitle, prevTitle.c_str()) == 0 &&
-                            strcmp(rawArtist, prevArtist.c_str()) == 0 &&
-                            strcmp(rawGenre, prevGenre.c_str()) == 0);
+                            bool isSameSong = (strcmp(rawTitle, prevTitle) == 0 &&
+                                                strcmp(rawArtist, prevArtist) == 0 &&
+                                                strcmp(rawGenre, prevGenre) == 0);
 
 
                             if (isSameSong && isPaused && !newSongRequested) {
@@ -562,9 +564,12 @@ void instructionReceiverRTOS(Uart &instrUart) {
                             } else {
                                 // New song (even if same metadata) or different song
                                 // Update cached metadata
-                                prevTitle = String(rawTitle);
-                                prevArtist = String(rawArtist);
-                                prevGenre = String(rawGenre);
+                                strncpy(prevTitle, rawTitle, sizeof(prevTitle) - 1);
+                                strncpy(prevArtist, rawArtist, sizeof(prevArtist) - 1);
+                                strncpy(prevGenre, rawGenre, sizeof(prevGenre) - 1);
+                                prevTitle[sizeof(prevTitle) - 1] = '\0';
+                                prevArtist[sizeof(prevArtist) - 1] = '\0';
+                                prevGenre[sizeof(prevGenre) - 1] = '\0';
 
                                 const char* filePath = findFileSimple(prevTitle, prevArtist, prevGenre);
                                 if (filePath) {
@@ -572,7 +577,8 @@ void instructionReceiverRTOS(Uart &instrUart) {
                                     Serial.println(filePath);
 
                                     // Force new song regardless of current state
-                                    currentSongPath = filePath;
+                                    strncpy(currentSongPath, filePath, sizeof(currentSongPath) - 1);
+                                    currentSongPath[sizeof(currentSongPath) - 1] = '\0';
                                     newSongRequested = true;
                                     isPlaying = true;
                                     isPaused = false;

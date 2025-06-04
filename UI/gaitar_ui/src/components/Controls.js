@@ -1,9 +1,15 @@
 // src/components/Controls.js
-import React from 'react';
+import React, { forwardRef, useImperativeHandle } from 'react';
 import { FaPlay, FaPause, FaStepForward, FaStepBackward, FaRandom } from 'react-icons/fa';
 import { esp32 } from '../api';
 
-const Controls = ({ currentTrack, setCurrentTrack, currentPlaylist, setIsPlaying, setCurrentPlaylist }) => {
+const Controls = forwardRef(({ 
+  currentTrack, 
+  setCurrentTrack, 
+  currentPlaylist, 
+  setCurrentPlaylist, 
+  setIsPlaying 
+}, ref) => {
   
   // Enhanced helper function to sanitize track data for ESP32
   const sanitizeTrackForESP32 = (track) => {
@@ -132,6 +138,51 @@ const Controls = ({ currentTrack, setCurrentTrack, currentPlaylist, setIsPlaying
     }
   };
 
+  // New function to play a specific track
+  const handlePlaySpecific = (track) => {
+    if (track) {
+      console.log('Controls: Playing specific track via voice:', track.title);
+      const sanitizedTrack = sanitizeTrackForESP32(track);
+      console.log('Controls: Sending specific track to ESP32:', sanitizedTrack);
+      
+      esp32.post('/play', sanitizedTrack)
+        .then(response => {
+          console.log('Controls: Successfully started playing specific track on ESP32:', response.data);
+          setIsPlaying(true);
+        })
+        .catch(error => {
+          console.error('Controls: Error playing specific track on ESP32:', error);
+          setIsPlaying(false);
+        });
+    } else {
+      console.log('Controls: No specific track provided');
+    }
+  };
+
+  // Expose methods to parent component via ref
+  useImperativeHandle(ref, () => ({
+    handlePlay: () => {
+      console.log('Controls: handlePlay called via voice control for current track:', currentTrack?.title);
+      handlePlay();
+    },
+    handlePlaySpecific: (track) => {
+      console.log('Controls: handlePlaySpecific called via voice control for track:', track?.title);
+      handlePlaySpecific(track);
+    },
+    handlePause: () => {
+      console.log('Controls: handlePause called via voice control');
+      handlePause();
+    },
+    handleSkip: () => {
+      console.log('Controls: handleSkip called via voice control');
+      handleSkip();
+    },
+    handlePrevious: () => {
+      console.log('Controls: handlePrevious called via voice control');
+      handlePrevious();
+    }
+  }));
+  
   return (
     <div className="controls">
       <button onClick={handleShuffle} className="control-button">
@@ -151,6 +202,6 @@ const Controls = ({ currentTrack, setCurrentTrack, currentPlaylist, setIsPlaying
       </button>
     </div>
   );
-};
+});
 
 export default Controls;

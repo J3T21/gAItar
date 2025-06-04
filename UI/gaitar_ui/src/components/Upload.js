@@ -1,133 +1,427 @@
-import React, { useState } from 'react';
-import { backend_api, esp32 } from '../api'; // Import the API instance
+import React, { useState, useEffect, useRef } from 'react';
+import { backend_api, esp32 } from '../api';
 
-const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, setSongs }) => {
+const Upload = ({ 
+  genres = [], 
+  artists = [], 
+  setTrackMetadata, 
+  onUpload, 
+  setSongs,
+  onVoiceToMidiUpload
+}) => {
   const [file, setFile] = useState(null);
   const [genre, setGenre] = useState('');
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [newGenre, setNewGenre] = useState('');
   const [newArtist, setNewArtist] = useState('');
-  const [searchTerm, setSearchTerm] = useState(''); // State for genre search
-  const [artistSearchTerm, setArtistSearchTerm] = useState(''); // State for artist search
+  const [searchTerm, setSearchTerm] = useState('');
+  const [artistSearchTerm, setArtistSearchTerm] = useState('');
   const [error, setError] = useState('');
-  const [showArtistDropdown, setShowArtistDropdown] = useState(false);
   const [showGenreDropdown, setShowGenreDropdown] = useState(false);
+  const [showArtistDropdown, setShowArtistDropdown] = useState(false);
+  const [isCustomFile, setIsCustomFile] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState('');
+  
+  // New states for ESP32 upload status
+  const [uploadStatus, setUploadStatus] = useState('idle');
+  const [uploadProgress, setUploadProgress] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadPercentage, setUploadPercentage] = useState(0);
+
+  // WebSocket reference and connection state
+  const wsRef = useRef(null);
+  const [wsConnected, setWsConnected] = useState(false);
+  const reconnectTimeoutRef = useRef(null);
+  const reconnectAttemptsRef = useRef(0);
+  const uploadTimeoutRef = useRef(null);
+
+  // Initialize WebSocket connection with unlimited reconnection attempts
+  useEffect(() => {
+    const connectWebSocket = () => {
+      try {
+        // Clean up existing connection
+        if (wsRef.current) {
+          wsRef.current.close();
+        }
+
+        console.log('Attempting to connect to WebSocket...');
+        wsRef.current = new WebSocket('ws://10.245.188.200/ws');
+        
+        wsRef.current.onopen = () => {
+          console.log('WebSocket connected to ESP32');
+          setWsConnected(true);
+          reconnectAttemptsRef.current = 0; // Reset reconnect attempts
+          
+          // Clear any existing reconnect timeout
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+          }
+        };
+        
+        wsRef.current.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            // console.log('WebSocket progress update:', data); // Comment out or remove
+            
+            // Clear upload timeout since we received a message
+            if (uploadTimeoutRef.current) {
+              clearTimeout(uploadTimeoutRef.current);
+              uploadTimeoutRef.current = null;
+            }
+            
+            // Update progress based on ESP32 feedback
+            if (data.stage && data.percentage !== undefined && data.message) {
+              setUploadProgress(`${data.stage}: ${data.message}`);
+              setUploadPercentage(data.percentage);
+              
+              // Check if upload is complete
+              if (data.percentage === 100 || data.stage === 'Complete') {
+                setUploadStatus('completed');
+                setUploadProgress('Upload completed successfully!');
+                setIsUploading(false);
+                setUploadPercentage(100);
+                
+                // Call handleUploadSuccess if we have the track metadata
+                handleUploadSuccess({
+                  title: title,
+                  artist: artist,
+                  genre: genre,
+                  duration_formatted: '00:00' // You might want to get this from the ESP32 response
+                });
+                
+              } else if (data.stage === 'Error' || data.message.includes('failed')) {
+                setUploadStatus('failed');
+                setUploadProgress('Upload failed: ' + data.message);
+                setError('Upload failed: ' + data.message);
+                setIsUploading(false);
+              } else {
+                // Reset upload timeout for ongoing uploads
+                setUploadTimeout();
+              }
+            }
+          } catch (err) {
+            // Handle non-JSON messages quietly
+          }
+        };
+        
+        wsRef.current.onclose = (event) => {
+          console.log('WebSocket disconnected from ESP32. Code:', event.code, 'Reason:', event.reason);
+          setWsConnected(false);
+          
+          // Always attempt to reconnect with no limit
+          reconnectAttemptsRef.current++;
+          const delay = Math.min(1000 * Math.pow(2, Math.min(reconnectAttemptsRef.current - 1, 5)), 30000); // Cap exponential backoff at 2^5 = 32s, max 30s
+          
+          console.log(`Attempting to reconnect in ${delay/1000}s (attempt ${reconnectAttemptsRef.current})`);
+          
+          // Only show reconnection progress if actively uploading
+          if (isUploading) {
+            setUploadProgress(`Connection lost. Reconnecting in ${delay/1000}s...`);
+          }
+          
+          reconnectTimeoutRef.current = setTimeout(() => {
+            connectWebSocket();
+          }, delay);
+        };
+        
+        wsRef.current.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          setWsConnected(false);
+        };
+
+      } catch (err) {
+        console.error('Failed to create WebSocket connection:', err);
+        setWsConnected(false);
+        
+        // Always retry connection
+        reconnectAttemptsRef.current++;
+        const delay = 3000;
+        reconnectTimeoutRef.current = setTimeout(connectWebSocket, delay);
+      }
+    };
+
+    // Set up upload timeout (in case ESP32 goes silent during upload)
+    const setUploadTimeout = () => {
+      if (uploadTimeoutRef.current) {
+        clearTimeout(uploadTimeoutRef.current);
+      }
+      
+      // Set a 2-minute timeout for upload silence
+      uploadTimeoutRef.current = setTimeout(() => {
+        if (isUploading) {
+          console.warn('Upload timeout - no progress updates received');
+          setUploadStatus('failed');
+          setUploadProgress('Upload timed out - no progress updates received');
+          setError('Upload timed out. The ESP32 may have encountered an issue.');
+          setIsUploading(false);
+        }
+      }, 120000); // 2 minutes
+    };
+
+    connectWebSocket();
+
+    // Cleanup on unmount
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (uploadTimeoutRef.current) {
+        clearTimeout(uploadTimeoutRef.current);
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, []); // Remove isUploading dependency to prevent reconnection loops
 
   // Handle file input change
   const handleFileChange = (e) => {
     const uploadedFile = e.target.files[0];
     if (uploadedFile) {
       setFile(uploadedFile);
+      setIsCustomFile(false);
+      setUploadMessage('');
+      setUploadStatus('idle');
+      setUploadProgress('');
+      setUploadPercentage(0);
     }
   };
 
-  // Handle file upload
+  // Listen for custom events from VoiceToMIDI
+  useEffect(() => {
+    const handleVoiceMidiUpload = (event) => {
+      const midiFile = event.detail;
+      setFile(midiFile);
+      setIsCustomFile(true);
+      setUploadMessage('Please fill in the upload fields');
+      setUploadStatus('idle');
+      setUploadProgress('');
+      setUploadPercentage(0);
+      
+      setTimeout(() => {
+        setUploadMessage('');
+      }, 8000);
+    };
+
+    document.addEventListener('voiceMidiUpload', handleVoiceMidiUpload);
+    
+    return () => {
+      document.removeEventListener('voiceMidiUpload', handleVoiceMidiUpload);
+    };
+  }, [title]);
+
+  // Main upload function
   const handleUpload = async () => {
     if (!file || !genre || !title || !artist) {
       setError('Please fill in all fields (file, genre, title, and artist)');
       return;
     }
-    setError(''); // Clear any previous error
+    
+    if (isUploading) {
+      setError('Upload already in progress. Please wait...');
+      return;
+    }
+
+    // Check WebSocket connection before starting upload
+    if (!wsConnected) {
+      setError('WebSocket not connected. Please wait for connection or refresh the page.');
+      return;
+    }
+    
+    setError('');
+    setUploadMessage('');
+    setIsUploading(true);
+    setUploadStatus('uploading');
+    setUploadProgress('Processing file...');
+    setUploadPercentage(0);
 
     console.log('Uploading file:', file);
-    if (file && genre && title && artist) {
+    
+    try {
+      // Step 1: Send to backend for processing
       const formData = new FormData();
       formData.append('midi_file', file);
       formData.append('genre', genre);
       formData.append('title', title);
       formData.append('artist', artist);
 
-      try {
-        // Send the form data to the backend
-        const response = await backend_api.post('/upload-midi', formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
+      setUploadProgress('Sending to backend for processing...');
+      setUploadPercentage(10);
+      
+      const response = await backend_api.post('/upload-midi', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      // Process the response
+      if (response.data) {
+        setTrackMetadata({
+          title: response.data.title,
+          artist: response.data.artist,
+          genre: response.data.genre,
+          duration_formatted: response.data.duration_formatted,
         });
 
-        // Process the response
-        if (response.data) {
-          // Update track metadata in App component
-          setTrackMetadata({
-            title: response.data.title,
-            artist: response.data.artist,
-            genre: response.data.genre,
-            duration_formatted: response.data.duration_formatted,
-          });
+        console.log('Track metadata:', response.data);
+        setUploadPercentage(30);
 
-          console.log('Track metadata:', response.data);
+        // Step 2: Prepare data for ESP32 transmission
+        setUploadProgress('Preparing data for ESP32...');
+        const json = JSON.stringify(response.data);
+        console.log("JSON size (bytes):", new TextEncoder().encode(json).length);
+        
+        // Clean the metadata for ESP32 (remove spaces and special characters)
+        const sanitizedTitle = response.data.title.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+        const sanitizedArtist = response.data.artist.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+        const sanitizedGenre = response.data.genre.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
 
-          // Prepare data for ESP32 transmission
-          const json = JSON.stringify(response.data);
-          console.log("JSON size (bytes):", new TextEncoder().encode(json).length);
-          const sanitizedTitle = response.data.title.replace(/\s+/g, '_');
-          const sanitizedArtist = response.data.artist.replace(/\s+/g, '_');
-          const sanitizedGenre = response.data.genre.replace(/\s+/g, '_');
-          const filename = `temp.json`;
-          const blob = new Blob([json], { type: 'application/json' });
-          const file = new File([blob], filename, { type: 'application/json' });
-          const espData = new FormData();
-          espData.append('data', file); // the JSON file
-          espData.append('title', sanitizedTitle);
-          espData.append('artist', sanitizedArtist);
-          espData.append('genre', sanitizedGenre);
+        // Create a simple blob for the file content
+        const jsonBlob = new Blob([json], { type: 'application/json' });
+        
+        // Create FormData exactly as your ESP32 expects it
+        const espData = new FormData();
+        espData.append('data', jsonBlob, 'temp.json'); // File with name 'temp.json'
+        espData.append('artist', sanitizedArtist);     // Form field
+        espData.append('title', sanitizedTitle);       // Form field  
+        espData.append('genre', sanitizedGenre);       // Form field
 
-          try {
-            await esp32.post('/upload', espData, {
-              headers: {
-                'Content-Type': 'multipart/form-data',
-              },
-            });
-            console.log('MIDI sent to ESP32 successfully');
-          } catch (espError) {
-            console.error('Failed to send MIDI to ESP32:', espError);
-          }
+        setUploadPercentage(40);
 
-          // Add the new song to the songs list
-          setSongs((prevSongs) => [
-            ...prevSongs,
-            {
-              title: response.data.title,
-              artist: response.data.artist,
-              genre: response.data.genre,
-            },
-          ]);
-
-          // Clear the input fields
-          setFile(null);
-          setGenre('');
-          setTitle('');
-          setArtist('');
-          setArtistSearchTerm('');
-          setSearchTerm('');
-
-          console.log('Song added to the list:', response.data.title);
-
-          // Notify parent component about the upload
-          onUpload(response.data.title, genre);
+        // Step 3: Send to ESP32 - now with WebSocket progress updates
+        setUploadProgress('Uploading to ESP32. Watch for real-time progress...');
+        
+        // Set upload timeout
+        if (uploadTimeoutRef.current) {
+          clearTimeout(uploadTimeoutRef.current);
         }
-      } catch (error) {
-        console.error('Error uploading MIDI file:', error);
+        uploadTimeoutRef.current = setTimeout(() => {
+          if (isUploading) {
+            setUploadStatus('failed');
+            setUploadProgress('Upload timed out - no response from ESP32');
+            setError('Upload timed out. Please try again.');
+            setIsUploading(false);
+          }
+        }, 120000); // 2 minutes timeout
+        
+        try {
+          const espResponse = await esp32.post('/upload', espData, {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+            timeout: 15000, // 15 second timeout for initial response
+          });
+          
+          console.log('ESP32 response:', espResponse.data);
+          
+          if (espResponse.status === 200) {
+            // Initial upload successful - progress will be tracked via WebSocket
+            setUploadProgress('Upload sent to ESP32. Processing...');
+            setUploadPercentage(50);
+            // Don't set completed here - wait for WebSocket confirmation
+          } else {
+            throw new Error('Unexpected ESP32 response: ' + espResponse.data);
+          }
+          
+        } catch (espError) {
+          console.error('Failed to send MIDI to ESP32:', espError);
+          
+          // Clear upload timeout
+          if (uploadTimeoutRef.current) {
+            clearTimeout(uploadTimeoutRef.current);
+            uploadTimeoutRef.current = null;
+          }
+          
+          if (espError.response && espError.response.status === 501) {
+            setUploadStatus('failed');
+            setUploadProgress('ESP32 upload not implemented');
+            setError('ESP32 upload endpoint returned 501 - Not Implemented. The route may not be properly configured.');
+          } else {
+            setUploadStatus('failed');
+            setUploadProgress('Upload failed');
+            setError('Failed to upload to ESP32: ' + espError.message);
+          }
+          setIsUploading(false);
+          setUploadPercentage(0);
+          return;
+        }
+        
       }
-    } else {
-      console.log('Please fill in all fields (file, genre, title, and artist)');
+    } catch (error) {
+      console.error('Error in upload process:', error);
+      setError('Upload failed: ' + error.message);
+      setUploadStatus('failed');
+      setUploadProgress('');
+      setUploadPercentage(0);
+      setIsUploading(false);
+      
+      // Clear upload timeout
+      if (uploadTimeoutRef.current) {
+        clearTimeout(uploadTimeoutRef.current);
+        uploadTimeoutRef.current = null;
+      }
     }
+  };
+
+  // Handle successful upload completion (called when WebSocket confirms success)
+  const handleUploadSuccess = (responseData) => {
+    // Clear upload timeout
+    if (uploadTimeoutRef.current) {
+      clearTimeout(uploadTimeoutRef.current);
+      uploadTimeoutRef.current = null;
+    }
+
+    // Add to songs list
+    setSongs((prevSongs) => [
+      ...prevSongs,
+      {
+        title: responseData.title,
+        artist: responseData.artist,
+        genre: responseData.genre,
+        duration_formatted: responseData.duration_formatted,
+      },
+    ]);
+
+    // Clear the input fields
+    setFile(null);
+    setGenre('');
+    setTitle('');
+    setArtist('');
+    setArtistSearchTerm('');
+    setSearchTerm('');
+    setIsCustomFile(false);
+
+    console.log('Song added to the list:', responseData.title);
+    onUpload(responseData.title, genre);
+  };
+
+  // Cancel upload function
+  const cancelUpload = () => {
+    if (uploadTimeoutRef.current) {
+      clearTimeout(uploadTimeoutRef.current);
+      uploadTimeoutRef.current = null;
+    }
+    
+    setIsUploading(false);
+    setUploadStatus('idle');
+    setUploadProgress('');
+    setUploadPercentage(0);
+    setError('Upload cancelled by user');
   };
 
   // Handle adding a new genre
   const handleAddGenre = () => {
     if (newGenre.trim() !== '') {
       setSongs((prevSongs) => {
-        // Check if the genre already exists
         const genreExists = prevSongs.some((song) => song.genre === newGenre);
         if (!genreExists) {
-          // Add a dummy song with the new genre to update the genre list
           return [...prevSongs, { title: '', artist: '', genre: newGenre }];
         }
         return prevSongs;
       });
-      setNewGenre(''); // Clear the input field
+      setNewGenre('');
     }
   };
 
@@ -135,15 +429,13 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, setSong
   const handleAddArtist = () => {
     if (newArtist.trim() !== '') {
       setSongs((prevSongs) => {
-        // Check if the artist already exists
         const artistExists = prevSongs.some((song) => song.artist === newArtist);
         if (!artistExists) {
-          // Add a dummy song with the new artist to update the artist list
           return [...prevSongs, { title: '', artist: newArtist, genre: '' }];
         }
         return prevSongs;
       });
-      setNewArtist(''); // Clear the input field
+      setNewArtist('');
     }
   };
 
@@ -152,13 +444,13 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, setSong
     .filter(artist =>
       artist && artist.toLowerCase().includes(artistSearchTerm.toLowerCase())
     )
-    .slice(0, 5); // Limit to top 5 results
+    .slice(0, 5);
 
   const filteredGenreSuggestions = genres
     .filter(genre =>
       genre && genre.toLowerCase().includes(searchTerm.toLowerCase())
     )
-    .slice(0, 5); // Limit to top 5 results
+    .slice(0, 5);
 
   // Handle artist suggestion click
   const handleArtistSuggestionClick = (selectedArtist) => {
@@ -174,19 +466,84 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, setSong
     setShowGenreDropdown(false);
   };
 
+  // Get status message styling
+  const getStatusMessageClass = () => {
+    switch (uploadStatus) {
+      case 'uploading':
+        return 'upload-progress-message';
+      case 'completed':
+        return 'upload-success-message';
+      case 'failed':
+        return 'error-message';
+      default:
+        return '';
+    }
+  };
+
   return (
     <div>
       {error && (
-        <div style={{ color: 'red', marginBottom: '10px' }}>
+        <div className="error-message">
           {error}
         </div>
       )}
-      <input type="file" onChange={handleFileChange} accept=".midi, .mid" />
+
+      {/* Display upload message in Upload component */}
+      {uploadMessage && (
+        <div className="upload-success-message">
+          {uploadMessage}
+        </div>
+      )}
+
+      {/* Upload status and progress */}
+      {uploadProgress && (
+        <div className={getStatusMessageClass()}>
+          {uploadProgress}
+          {uploadStatus === 'uploading' && (
+            <div className="upload-progress-container">
+              <div className="upload-spinner">⟳</div>
+              <div className="upload-percentage">{uploadPercentage}%</div>
+              <button 
+                onClick={cancelUpload}
+                className="cancel-upload-button"
+                style={{ marginLeft: '10px', fontSize: '12px' }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      
+      {/* Custom file input with conditional display */}
+      <div className="file-input-container">
+        <input 
+          type="file" 
+          onChange={handleFileChange} 
+          accept=".midi, .mid"
+          style={{ display: 'none' }}
+          id="file-upload"
+          disabled={isUploading}
+        />
+        <label htmlFor="file-upload" className={`file-upload-label ${isUploading ? 'disabled' : ''}`}>
+          {file ? (
+            isCustomFile ? (
+              <span className="file-status custom">Custom file added</span>
+            ) : (
+              <span className="file-status selected">{file.name}</span>
+            )
+          ) : (
+            <span className="file-status">Choose MIDI file</span>
+          )}
+        </label>
+      </div>
+
       <input
         type="text"
         placeholder="Track Title"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
+        disabled={isUploading}
       />
 
       {/* Artist selection with dropdown */}
@@ -203,8 +560,9 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, setSong
           onFocus={() => setShowArtistDropdown(true)}
           onBlur={() => setTimeout(() => setShowArtistDropdown(false), 200)}
           className="artist-input"
+          disabled={isUploading}
         />
-        {showArtistDropdown && filteredArtistSuggestions.length > 0 && (
+        {showArtistDropdown && filteredArtistSuggestions.length > 0 && !isUploading && (
           <ul className="upload-suggestions-list">
             {filteredArtistSuggestions.map((artist, index) => (
               <li
@@ -233,8 +591,9 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, setSong
           onFocus={() => setShowGenreDropdown(true)}
           onBlur={() => setTimeout(() => setShowGenreDropdown(false), 200)}
           className="genre-input"
+          disabled={isUploading}
         />
-        {showGenreDropdown && filteredGenreSuggestions.length > 0 && (
+        {showGenreDropdown && filteredGenreSuggestions.length > 0 && !isUploading && (
           <ul className="upload-suggestions-list">
             {filteredGenreSuggestions.map((genre, index) => (
               <li
@@ -250,7 +609,14 @@ const Upload = ({ genres = [], artists = [], setTrackMetadata, onUpload, setSong
       </div>
 
       {/* Upload button */}
-      <button onClick={handleUpload}>Upload</button>
+      <button 
+        onClick={handleUpload} 
+        disabled={isUploading || !wsConnected}
+        className={isUploading || !wsConnected ? 'upload-button-disabled' : ''}
+      >
+        {isUploading ? `Uploading... ${uploadPercentage}%` : 
+         !wsConnected ? 'Connecting...' : 'Upload'}
+      </button>
     </div>
   );
 };

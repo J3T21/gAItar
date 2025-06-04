@@ -1,4 +1,5 @@
 #include "uart.h"
+#include "esp_server.h"
 #include "SPIFFS.h"
 #include "FS.h"
 
@@ -117,6 +118,23 @@ void uploadToSAMD(bool &sendFile, const String &filePath) {
   }
 }
 
+void handlePlaybackMessages() {
+  if (instruction_uart.available()) {
+    String message = instruction_uart.readStringUntil('\n');
+    message.trim();
+    
+    // Check if this is a status message
+    if (message.startsWith("STATUS:")) {
+      // Extract JSON part after "STATUS:"
+      String jsonData = message.substring(7);  // Remove "STATUS:" prefix
+      notifyPlaybackStatus(jsonData);
+    }
+    // You can add other message types here as needed
+    // else if (message.startsWith("ERROR:")) {
+    //   // Handle error messages
+    // }
+  }
+}
 
 enum UploadState{
   IDLE,
@@ -138,7 +156,7 @@ void uploadToSAMD_state(bool &sendFile, const String &filePath) {
   static unsigned long ackStartTime = 0;
   static size_t lastChunkSize = 0;
   static const int MAX_RETRIES = 10;
-  static const int TIMEOUT = 2000; // 1 second timeout for ACK
+  static const int TIMEOUT = 2000; //  2 second timeout for ACK
   static int retryCount = 0;
   static const String tempPath = "/temp";
 
@@ -156,6 +174,7 @@ void uploadToSAMD_state(bool &sendFile, const String &filePath) {
       file = SPIFFS.open(tempPath, FILE_READ);
       if (!file){
         Serial.println("Failed to open file: " + tempPath);
+        notifyProgress("transfer", 0, "Failed to open file");
         sendFile = false;
         state = IDLE;
         return;
@@ -163,6 +182,7 @@ void uploadToSAMD_state(bool &sendFile, const String &filePath) {
       fileSize = file.size();
       chunkId = 0;
       retryCount = 0;
+      notifyProgress("transfer", 0, "File opened, preparing transfer..."); 
       state = SEND_HEADER;
       break;
 
@@ -170,6 +190,7 @@ void uploadToSAMD_state(bool &sendFile, const String &filePath) {
       String header = "START:" + filePath + ":SIZE:"
       + String(fileSize) + "\n";
       Serial.println("Sending header: " + header);
+      notifyProgress("transfer", 5, "Sending header to Grand Central...");
       upload_uart.print(header); // Send header to Grand Central
       ackStartTime = millis();
       retryCount = 0;
@@ -185,24 +206,29 @@ void uploadToSAMD_state(bool &sendFile, const String &filePath) {
         if (ack.indexOf("ACK:START:SIZE:") != -1){
           size_t recvdSize = ack.substring(String("ACK:START:SIZE:").length()).toInt();
           if (recvdSize == fileSize){
+            notifyProgress("transfer", 10, "Header acknowledged, starting chunk transfer...");
             state = SEND_CHUNK;
           }else{
             Serial.printf("Header ACK size mismatch: expected %u, got %u\n", fileSize, recvdSize);
+            notifyProgress("transfer", 0, "Header size mismatch error");
             file.close();
             sendFile = false;
             state = IDLE;
           }
         }else{
           Serial.printf("Unexpected header ACK: %s\n", ack.c_str());
+          notifyProgress("transfer", 0, "Unexpected header response");
         }
       }else if (millis() - ackStartTime > TIMEOUT){
         if (++retryCount <= MAX_RETRIES){
           Serial.println("Header ACK timeout, retrying...");
+          notifyProgress("transfer", 5, "Header timeout, retrying...");
           String header = "START:" + filePath + ":SIZE:" + String(fileSize) + "\n";
           upload_uart.print(header); // Resend header to Grand Central
           ackStartTime = millis();
         }else{
           Serial.println("Retries exceeded aborting ...");
+          notifyProgress("transfer", 0, "Transfer failed - too many retries");
           file.close();
           sendFile = false;
           state = IDLE;
@@ -215,14 +241,19 @@ void uploadToSAMD_state(bool &sendFile, const String &filePath) {
       if (file.available()){
         lastChunkSize = file.read(buffer, chunkSize);
         upload_uart.printf("CHUNK:%u:SIZE:%u\n", chunkId, lastChunkSize);
-        // Serial.printf("Sending chunk %u of size %u\n", chunkId, lastChunkSize);
-        // Serial.printf("CHUNK:%u:SIZE:%u\n", chunkId, lastChunkSize);
+  // Only update progress every 10 chunks or at significant milestones
+        if (chunkId % 5 == 0 || chunkId == 0) {
+          int progress = 10 + ((chunkId * chunkSize * 80) / fileSize);
+          progress = min(progress, 90);
+          notifyProgress("transfer", progress, "Transferring chunk " + String(chunkId + 1) + "...");
+        }
         upload_uart.write(buffer, lastChunkSize);
         ackStartTime = millis();
         retryCount = 0;
         state = WAIT_CHUNK_ACK;
       }else{
         Serial.println("All chunks sent, waiting for final ACK...");
+        notifyProgress("transfer", 99, "All chunks sent, waiting for confirmation...");
         state = CLEANUP;
       }
       break;
@@ -245,6 +276,7 @@ void uploadToSAMD_state(bool &sendFile, const String &filePath) {
           ackStartTime = millis();
         }else{
         Serial.printf("Retries exceeded for chunk %u, aborting...\n", chunkId);
+        notifyProgress("transfer", 0, "Transfer failed - chunk timeout");
         file.close();
         sendFile = false;
         state = IDLE;
@@ -254,11 +286,14 @@ void uploadToSAMD_state(bool &sendFile, const String &filePath) {
     case CLEANUP:
       file.close();
       Serial.println("File sent to Grand Central");
+      notifyProgress("transfer", 100, "Transfer complete!");
       if (SPIFFS.remove(tempPath)){
         Serial.println("File deleted from ESP32 SPIFFS.");
+        notifyProgress("complete", 100, "Upload complete!");
       }else{
         Serial.println("Failed to delete the file from ESP32 SPIFFS.");
       }
+
       sendFile = false; // Reset flag after successful send
       state = IDLE;
       break;

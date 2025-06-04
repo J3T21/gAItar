@@ -1,64 +1,187 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 const PlaybackInfo = ({ currentTrack }) => {
-  const [progress, setProgress] = useState(0); // current playback time
-  const [isScrubbing, setIsScrubbing] = useState(false);
-  const [scrubTime, setScrubTime] = useState(0);
-  const duration = 180; // example: 3-minute track (static for now)
+  const [progress, setProgress] = useState(0); // current playback time from ESP32 in milliseconds
+  const [totalDuration, setTotalDuration] = useState(180000); // total track duration from ESP32 in milliseconds
+  const [isPlaying, setIsPlaying] = useState(false); // calculated from time changes
+  const [isPaused, setIsPaused] = useState(false); // calculated from time stagnation
+  const [songName, setSongName] = useState(''); // current song name from ESP32
+  const [wsConnected, setWsConnected] = useState(false);
+  
+  const wsRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
+  const reconnectAttemptsRef = useRef(0);
+  const lastProgressRef = useRef(0);
+  const progressCheckTimeoutRef = useRef(null);
+  const lastUpdateTimeRef = useRef(0);
+  const UPDATE_THROTTLE = 1000; // Only update every 1 second
 
+  // WebSocket connection for real-time playback updates
   useEffect(() => {
-    if (!currentTrack) return;
+    const connectWebSocket = () => {
+      try {
+        if (wsRef.current) {
+          wsRef.current.close();
+        }
 
-    const interval = setInterval(() => {
-      if (!isScrubbing) {
-        setProgress(prev => {
-          if (prev >= duration) {
-            clearInterval(interval);
-            return duration;
+        console.log('PlaybackInfo: Connecting to WebSocket...');
+        wsRef.current = new WebSocket('ws://10.245.188.200/ws');
+        
+        wsRef.current.onopen = () => {
+          console.log('PlaybackInfo: WebSocket connected');
+          setWsConnected(true);
+          reconnectAttemptsRef.current = 0;
+          
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
           }
-          return prev + 1;
-        });
+        };
+        
+        wsRef.current.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            
+            // Handle playback status updates
+            if (data.type === 'playback_status') {
+              // Throttle updates to reduce frequency
+              const now = Date.now();
+              if (now - lastUpdateTimeRef.current < UPDATE_THROTTLE) {
+                return; // Skip this update
+              }
+              lastUpdateTimeRef.current = now;
+              
+              // Reduce console logging
+              // console.log('PlaybackInfo: Received playback status:', data); // Comment out or remove
+              
+              // Update playback time (keep in milliseconds)
+              if (data.currentTime !== undefined) {
+                const newProgress = data.currentTime; // Keep as milliseconds
+                setProgress(newProgress);
+                
+                // Calculate playing state based on time progression
+                const wasPlaying = newProgress > lastProgressRef.current;
+                const isFinished = data.totalTime && newProgress >= data.totalTime;
+                
+                if (isFinished) {
+                  setIsPlaying(false);
+                  setIsPaused(false);
+                } else if (wasPlaying) {
+                  setIsPlaying(true);
+                  setIsPaused(false);
+                } else {
+                  // Check for pause state after a delay
+                  if (progressCheckTimeoutRef.current) {
+                    clearTimeout(progressCheckTimeoutRef.current);
+                  }
+                  
+                  progressCheckTimeoutRef.current = setTimeout(() => {
+                    // If time hasn't changed after 2 seconds and we're not at the end, consider it paused
+                    if (newProgress > 0 && !isFinished) {
+                      setIsPlaying(false);
+                      setIsPaused(true);
+                    }
+                  }, 2000);
+                }
+                
+                lastProgressRef.current = newProgress;
+              }
+              
+              // Update total duration (keep in milliseconds)
+              if (data.totalTime !== undefined) {
+                setTotalDuration(data.totalTime);
+              }
+              
+              // Handle raw data fallback
+              if (data.rawData) {
+                console.log('PlaybackInfo: Raw playback data:', data.rawData);
+              }
+            }
+          } catch (err) {
+            // Reduce console logging
+            // console.log('PlaybackInfo: Non-JSON WebSocket message:', event.data); // Comment out
+          }
+        };
+        
+        wsRef.current.onclose = (event) => {
+          console.log('PlaybackInfo: WebSocket disconnected');
+          setWsConnected(false);
+          
+          // Attempt to reconnect
+          reconnectAttemptsRef.current++;
+          const delay = Math.min(1000 * Math.pow(2, Math.min(reconnectAttemptsRef.current - 1, 5)), 30000);
+          
+          reconnectTimeoutRef.current = setTimeout(() => {
+            connectWebSocket();
+          }, delay);
+        };
+        
+        wsRef.current.onerror = (error) => {
+          console.error('PlaybackInfo: WebSocket error:', error);
+          setWsConnected(false);
+        };
+
+      } catch (err) {
+        console.error('PlaybackInfo: Failed to create WebSocket connection:', err);
+        setWsConnected(false);
+        
+        // Retry connection
+        reconnectAttemptsRef.current++;
+        const delay = 3000;
+        reconnectTimeoutRef.current = setTimeout(connectWebSocket, delay);
       }
-    }, 1000);
+    };
 
-    return () => clearInterval(interval);
-  }, [currentTrack, isScrubbing]);
+    connectWebSocket();
 
-  const handleScrubStart = () => setIsScrubbing(true);
-  const handleScrubEnd = () => {
-    setIsScrubbing(false);
-    setProgress(scrubTime); // Update playback time when scrubbing ends
+    // Cleanup on unmount
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (progressCheckTimeoutRef.current) {
+        clearTimeout(progressCheckTimeoutRef.current);
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, []);
+
+  // Reset progress when track changes
+  useEffect(() => {
+    if (currentTrack) {
+      setProgress(0);
+      setIsPlaying(false);
+      setIsPaused(false);
+      lastProgressRef.current = 0;
+    }
+  }, [currentTrack]);
+
+  // Convert milliseconds to MM:SS format (matches the script.js formatTime function)
+  const formatTime = (milliseconds) => {
+    const totalSeconds = Math.floor(milliseconds / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   };
-  const handleScrub = (e) => {
-    const newTime = Math.min(Math.max(e.nativeEvent.offsetX / e.target.offsetWidth * duration, 0), duration);
-    setScrubTime(newTime);
-  };
 
-  const formatTime = (seconds) => {
-    const min = Math.floor(seconds / 60);
-    const sec = String(seconds % 60).padStart(2, '0');
-    return `${min}:${sec}`;
-  };
+  const progressPercent = totalDuration > 0 ? (progress / totalDuration) * 100 : 0;
 
-  const progressPercent = (progress / duration) * 100;
-  const scrubPercent = (scrubTime / duration) * 100;
-
+  // Show playback info only if we have a current track
   if (!currentTrack) return null;
 
   return (
     <div className="playback-info">
-      <h3>{currentTrack}</h3>
-      <div
-        className="progress-bar"
-        onMouseDown={handleScrubStart}
-        onMouseUp={handleScrubEnd}
-        onMouseMove={isScrubbing ? handleScrub : null}
-      >
+      {/* Progress bar (visual only, no scrubbing) */}
+      <div className="progress-bar">
         <div className="progress-bar-filled" style={{ width: `${progressPercent}%` }} />
-        <div className="scrubber" style={{ left: `${scrubPercent}%` }} />
       </div>
+      
+      {/* Time information */}
       <div className="time-info">
-        {formatTime(progress)} / {formatTime(duration)}
+        <span className="current-time">{formatTime(progress)}</span>
+        <span className="total-time">{formatTime(totalDuration)}</span>
       </div>
     </div>
   );

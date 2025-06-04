@@ -3,12 +3,12 @@
 Uart &dataUart = Serial1; // Define the UART interface for data transfer
 Uart &instructionUart = Serial4; // Define the UART interface for instructions
 SdFat sd;
-ServoController servo6(2, 78, 98);
-ServoController servo5(3, 75, 94);
-ServoController servo4(4, 82, 102);
-ServoController servo3(5, 81, 101);
-ServoController servo2(6, 83, 103);
-ServoController servo1(7, 79, 99);
+ServoController servo1(2, 86, 106);
+ServoController servo2(3, 78, 96);
+ServoController servo3(4, 79, 100);
+ServoController servo4(5, 80, 96);
+ServoController servo5(6, 85, 107);
+ServoController servo6(7, 74, 97);
 
 byte fretStates[NUM_FRETS] = {0}; // array to hold the state of the left hand
 

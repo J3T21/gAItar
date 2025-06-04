@@ -1,4 +1,4 @@
-#include "server.h"
+#include "esp_server.h"
 #include "uart.h"  // For UART send
 #include <ArduinoJson.h>
 #include "FS.h"
@@ -6,9 +6,59 @@
 #include "uart.h"
 #include "globals.h"
 
+AsyncWebSocket ws("/ws");
+
+void setupWebSocket(AsyncWebServer& server) {
+  ws.onEvent([](AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
+    if (type == WS_EVT_CONNECT) {
+      Serial.printf("WebSocket client #%u connected\n", client->id());
+    } else if (type == WS_EVT_DISCONNECT) {
+      Serial.printf("WebSocket client #%u disconnected\n", client->id());
+    }
+  });
+  
+  server.addHandler(&ws);
+}
+
+
+void notifyProgress(const String& stage, int percentage, const String& message) {
+  static unsigned long lastUpdate = 0;
+  static int lastPercentage = -1;
+  static String lastStage = "";
+  
+  unsigned long now = millis();
+  
+  // Always send these critical messages regardless of throttling
+  bool isCritical = (percentage == 0 || percentage == 100 || 
+                     stage == "complete" || stage == "error" || 
+                     stage != lastStage);  // Always send when stage changes
+  
+  // Apply throttling only for non-critical updates
+  if (!isCritical && (now - lastUpdate < 100 || abs(percentage - lastPercentage) < 2)) {
+    return;
+  }
+  
+  lastUpdate = now;
+  lastPercentage = percentage;
+  lastStage = stage;
+  
+  JsonDocument doc;
+  doc["type"] = "upload_progress";
+  doc["stage"] = stage;
+  doc["percentage"] = percentage;
+  doc["message"] = message;
+  doc["timestamp"] = now;
+  
+  String jsonString;
+  serializeJson(doc, jsonString);
+  ws.textAll(jsonString);
+  doc.clear();
+  Serial.printf("Progress: %s - %d%% - %s\n", stage.c_str(), percentage, message.c_str());
+}
+
 void setupTestServer(AsyncWebServer& server) {
   // Handle preflight (CORS OPTIONS) requests globally
-
+  setupWebSocket(server);
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -23,27 +73,30 @@ void setupTestServer(AsyncWebServer& server) {
     }
   });
 
-  auto handleRequest = [](const String &label) {
+auto handleRequest = [](const String &label) {
     return [label](AsyncWebServerRequest *request) {
-      Serial.println(label);
-      String artist, title, genre;
-      if (request->hasParam("artist", true)) {
-        artist = request->getParam("artist", true)->value();
-        Serial.printf("Artist: %s\n", artist.c_str());
-      }
-      if (request->hasParam("title", true)) {
-        title = request->getParam("title", true)->value();
-        Serial.printf("Title: %s\n", title.c_str());
-      }
-      if (request->hasParam("genre", true)) {
-        genre = request->getParam("genre", true)->value();
-        Serial.printf("Genre: %s\n", genre.c_str());
-      }
-      filePath = "/" +genre + "/" + artist + "/" + title + ".json";
-      AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", label + " command received");
-      request->send(response);
+        Serial.println(label);
+        String artist, title, genre;
+        
+        if (request->hasParam("artist", true)) {
+            artist = request->getParam("artist", true)->value();
+            Serial.printf("Artist: %s\n", artist.c_str());
+        }
+        if (request->hasParam("title", true)) {
+            title = request->getParam("title", true)->value();
+            Serial.printf("Title: %s\n", title.c_str());
+        }
+        if (request->hasParam("genre", true)) {
+            genre = request->getParam("genre", true)->value();
+            Serial.printf("Genre: %s\n", genre.c_str());
+        }
+        
+        filePath = "/" + genre + "/" + artist + "/" + title + ".json";
+        
+        AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", label + " command received");
+        request->send(response);
     };
-  };
+};
 
   auto handlePauseRequest = [](const String &label) {
     return [label](AsyncWebServerRequest *request) {
@@ -169,4 +222,43 @@ void formatSPIFFS() {
   } else {
     Serial.println("Failed to format SPIFFS.");
   }
+}
+
+// Add after the existing notifyProgress function
+void notifyPlaybackStatus(const String& jsonData) {
+  JsonDocument doc;
+  doc["type"] = "playback_status";
+  doc["timestamp"] = millis();
+  
+  // Parse the incoming JSON data from Grand Central
+  JsonDocument statusDoc;
+  DeserializationError error = deserializeJson(statusDoc, jsonData);
+  
+  if (!error) {
+    // Only forward the essential time data
+    if (!statusDoc["currentTime"].isNull()) {
+      doc["currentTime"] = statusDoc["currentTime"];
+    }
+    if (!statusDoc["totalTime"].isNull()) {
+      doc["totalTime"] = statusDoc["totalTime"];
+    }
+    
+    // ESP32 can calculate these derived values:
+    // - isPlaying = currentTime > 0 && currentTime < totalTime
+    // - isPaused = check if currentTime hasn't changed for a while
+    // - isFinished = currentTime >= totalTime
+    // - progress = (currentTime / totalTime) * 100
+    
+  } else {
+    // If JSON parsing fails, send raw data
+    doc["rawData"] = jsonData;
+  }
+  
+  String jsonString;
+  serializeJson(doc, jsonString);
+  ws.textAll(jsonString);
+  doc.clear();
+  statusDoc.clear();
+  
+  Serial.printf("Playback Status: %s\n", jsonData.c_str());
 }

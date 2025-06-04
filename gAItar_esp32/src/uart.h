@@ -1,6 +1,7 @@
 #ifndef UART_H
 #define UART_H
 #include <Arduino.h>
+#include "globals.h"
 
 #define INSTR_RX 22
 #define INSTR_TX 23
@@ -18,4 +19,6 @@ void instructionToSAMD(const uint8_t* instruction, size_t length);
 void uploadToSAMD(bool &sendFile,const String &filePath);
 void uploadToSAMD_chunk(bool &sendFile, const String &filePath);
 void uploadToSAMD_state(bool &sendFile, const String &filePath);
+void handlePlaybackMessages();
+// Add this function declaration
 #endif
