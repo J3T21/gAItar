@@ -27,6 +27,7 @@ void sendPlaybackStatus(Uart &instrUart, JsonArray *eventsPtr = nullptr);
 // Add these declarations to translate.h
 void sendPlaybackStatusSafe(Uart &instrUart, unsigned long totalTime);
 void playGuitarRTOS_safe(const char* filePath); 
+void resumePlaybackAtCurrentEvent();
 
 // If needed elsewhere, also expose time and note state:
 extern unsigned long currentTime;

@@ -174,11 +174,12 @@ void instructionReceiverRTOS(Uart &instrUart) {
 
                             if (isSameSong && isPaused && !newSongRequested) {
                                 // Resume the same paused song
-                                startTime = millis() - pauseOffset;
+                                resumePlaybackAtCurrentEvent();  // ← Use the new function
                                 isPlaying = true;
                                 isPaused = false;
                                 Serial.println("Resuming previous song (metadata matched)");
-                            } else {
+                            }
+                            else {
                                 // New song (even if same metadata) or different song
                                 // Update cached metadata
                                 strncpy(prevTitle, rawTitle, sizeof(prevTitle) - 1);

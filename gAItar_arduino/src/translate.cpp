@@ -13,12 +13,11 @@ extern unsigned long startTime;
 extern unsigned long pauseOffset;
 extern SemaphoreHandle_t playbackSemaphore;
 extern SemaphoreHandle_t sdSemaphore;
-
+static JsonArray events;
 
 void playGuitarRTOS(const char* filePath) {
     static File file;
     static JsonDocument doc;
-    static JsonArray events;
     static bool fileLoaded = false;
 
     if (!isPlaying || isPaused) {
@@ -186,7 +185,6 @@ void playGuitarRTOS(const char* filePath) {
 void playGuitarRTOS_Hammer(const char* filePath) {
     static File file;
     static JsonDocument doc;
-    static JsonArray events;
     static bool fileLoaded = false;
     static const unsigned long SERVO_THRESH = 100;
     size_t MAX_FILE_SIZE = 150000;
@@ -404,7 +402,19 @@ void playGuitarRTOS_Hammer(const char* filePath) {
 
 // Add these helper functions to translate.cpp
 
-
+// Add to translate.cpp
+void resumePlaybackAtCurrentEvent() {
+    extern size_t currentEventIndex;
+    extern unsigned long startTime;
+    
+    // Access the static doc from playGuitarRTOS_safe
+    // We need to make doc accessible or pass the event time differently
+    
+    // Simple approach: calculate startTime based on currentEventIndex
+    // This assumes the next event should play "now"
+    startTime = millis();
+    Serial.printf("Resuming at event %zu\n", currentEventIndex);
+}
 
 
 void processGuitarEvent(int string, int fret, bool moveServo) {
@@ -524,29 +534,31 @@ void sendPlaybackStatusSafe(Uart &instrUart, unsigned long totalTime) {
 void playGuitarRTOS_safe(const char* filePath) {
     static File file;
     static JsonDocument doc;
-    static JsonArray events;
     static bool fileLoaded = false;
     static unsigned long cachedTotalTime = 0;
     static bool totalTimeCached = false;
     static const unsigned long SERVO_THRESH = 100;
     size_t MAX_FILE_SIZE = 150000;
+    static unsigned long lastStatus = 0;
+    static bool fretsCleared = false;
+    
+    bool shouldSendStatus = false;
+    if (millis() - lastStatus > 1000) {
+        shouldSendStatus = true;
+        lastStatus = millis();
+    }
 
     if (!isPlaying || isPaused) {
-        // Only update status every 1s to avoid UART flooding
-        static unsigned long lastStatus = 0;
-        if (millis() - lastStatus > 1000) {
+        if (shouldSendStatus) {
             sendPlaybackStatusSafe(instructionUart, cachedTotalTime);
-            lastStatus = millis();
         }
-        // Only clear frets once per pause/stop
-        static bool fretsCleared = false;
+
         if (!fretsCleared) {
             clearAllFrets();
             fretsCleared = true;
         }
         return;
     } else {
-        static bool fretsCleared = false;
         fretsCleared = false;
     }
 
@@ -587,14 +599,15 @@ void playGuitarRTOS_safe(const char* filePath) {
                 return;
             }
             
-            events = doc["events"];
+            // ← NO MORE JsonArray - work directly with document
             fileLoaded = true;
             
-            // ← CRITICAL FIX: Simple total time caching without repeated JsonObject access
-            if (events.size() > 0) {
-                JsonObject lastEvent = events[events.size() - 1];  // Single JsonObject creation
-                cachedTotalTime = lastEvent["time"].as<unsigned long>();
+            // Cache total time directly from document
+            if (doc["events"].size() > 0) {
+                size_t lastIndex = doc["events"].size() - 1;
+                cachedTotalTime = doc["events"][lastIndex]["time"].as<unsigned long>();
                 totalTimeCached = true;
+                Serial.printf("New song loaded, total time: %lu\n", cachedTotalTime);
             }
             
             if (newSongRequested){
@@ -610,28 +623,24 @@ void playGuitarRTOS_safe(const char* filePath) {
     }
 
     // Send status with cached time
-    if (fileLoaded && totalTimeCached) {
+    if (shouldSendStatus && fileLoaded && totalTimeCached) {
         sendPlaybackStatusSafe(instructionUart, cachedTotalTime);
     }
 
-    // ← CRITICAL FIX: Eliminate all repeated JsonObject creation
-    if (currentEventIndex < events.size()) {
-        JsonObject event = events[currentEventIndex];  // Single JsonObject creation per iteration
+    // ← CRITICAL FIX: Direct document access - no JsonArray
+    if (currentEventIndex < doc["events"].size()) {
+        JsonObject event = doc["events"][currentEventIndex];  // Direct access
         unsigned long eventTime = event["time"].as<unsigned long>();
         int string = event["string"].as<int>();
         int fret = event["fret"].as<int>();
 
         if (millis() - startTime >= eventTime) {
-            // ← CRITICAL FIX: Simple servo decision without look-ahead loop
             bool moveServo = false;
             if (fret > 0) {
-                // Simple heuristic: move servo for fretted notes
-                moveServo = true;  // Always move servo for fretted notes
+                moveServo = true;
             }
             
-            // Process the event
             processGuitarEvent(string, fret, moveServo);
-            
             currentEventIndex++;
         }
     } else {
@@ -640,8 +649,7 @@ void playGuitarRTOS_safe(const char* filePath) {
             sendPlaybackStatusSafe(instructionUart, cachedTotalTime);
         }
         
-        doc.clear();
-        
+        doc.clear(); 
         currentSongPath[0] = '\0';
         isPlaying = false;
         fileLoaded = false;
