@@ -15,9 +15,12 @@ extern SemaphoreHandle_t playbackSemaphore;
 extern SemaphoreHandle_t sdSemaphore;
 static JsonArray events;
 
+// FIX: Define a single file-scope JsonDocument instead of extern
+JsonDocument doc;
+
 void playGuitarRTOS(const char* filePath) {
     static File file;
-    static JsonDocument doc;
+    // REMOVE: static JsonDocument doc; - now using file-scope doc
     static bool fileLoaded = false;
 
     if (!isPlaying || isPaused) {
@@ -184,7 +187,7 @@ void playGuitarRTOS(const char* filePath) {
 
 void playGuitarRTOS_Hammer(const char* filePath) {
     static File file;
-    static JsonDocument doc;
+    // REMOVE: static JsonDocument doc; - now using file-scope doc
     static bool fileLoaded = false;
     static const unsigned long SERVO_THRESH = 100;
     size_t MAX_FILE_SIZE = 150000;
@@ -395,25 +398,24 @@ void playGuitarRTOS_Hammer(const char* filePath) {
         isPlaying = false;
         fileLoaded = false;
         newSongRequested = true;
-        Serial.println("Playback finished.");
+        Serial.println("Playbook finished.");
     }
 }
 
 
-// Add these helper functions to translate.cpp
-
-// Add to translate.cpp
+// FIX: resumePlaybackAtCurrentEvent now works correctly with file-scope doc
 void resumePlaybackAtCurrentEvent() {
     extern size_t currentEventIndex;
     extern unsigned long startTime;
-    
-    // Access the static doc from playGuitarRTOS_safe
-    // We need to make doc accessible or pass the event time differently
-    
-    // Simple approach: calculate startTime based on currentEventIndex
-    // This assumes the next event should play "now"
-    startTime = millis();
-    Serial.printf("Resuming at event %zu\n", currentEventIndex);
+
+    if (doc["events"].size() > currentEventIndex) {
+        unsigned long eventTime = doc["events"][currentEventIndex]["time"].as<unsigned long>();
+        startTime = millis() - eventTime;
+        Serial.printf("Resuming at event %zu (time %lu)\n", currentEventIndex, eventTime);
+    } else {
+        startTime = millis();
+        Serial.println("Resuming at end of song");
+    }
 }
 
 
@@ -533,7 +535,7 @@ void sendPlaybackStatusSafe(Uart &instrUart, unsigned long totalTime) {
 }
 void playGuitarRTOS_safe(const char* filePath) {
     static File file;
-    static JsonDocument doc;
+    // REMOVE: static JsonDocument doc; - now using file-scope doc
     static bool fileLoaded = false;
     static unsigned long cachedTotalTime = 0;
     static bool totalTimeCached = false;

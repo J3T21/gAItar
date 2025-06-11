@@ -30,8 +30,8 @@ TaskHandle_t fileReceiverTaskHandle;
 void fileReceiverTask(void *pvParameters){
     while (true){
         fileReceiverRTOS_char(dataUart);
-        //vTaskDelay(1 / portTICK_PERIOD_MS);
-        taskYIELD();
+        vTaskDelay(5 / portTICK_PERIOD_MS);
+        //taskYIELD();
         // Serial.print("fileTask stack left: ");
         // Serial.println(uxTaskGetStackHighWaterMark(NULL));
     }
