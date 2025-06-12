@@ -1,6 +1,8 @@
 # gAItar
 Final Year Masters Electronic and Information Engineering project: A mechatronic interface to play an acoustic guitar with some AI elements.
 
+[![gAItar Demo Video](https://img.youtube.com/vi/pzkTf3Y7SAQ/0.jpg)](https://youtu.be/pzkTf3Y7SAQ)
+
 ## User Guide
 
 ### Introduction
