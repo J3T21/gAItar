@@ -28,6 +28,7 @@ void sendPlaybackStatus(Uart &instrUart, JsonArray *eventsPtr = nullptr);
 void sendPlaybackStatusSafe(Uart &instrUart, unsigned long totalTime);
 void playGuitarRTOS_safe(const char* filePath); 
 void resumePlaybackAtCurrentEvent();
+void playGuitarRTOS_Binary(const char* filePath);
 
 // If needed elsewhere, also expose time and note state:
 extern unsigned long currentTime;

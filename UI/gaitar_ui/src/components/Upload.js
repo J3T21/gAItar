@@ -225,166 +225,178 @@ const Upload = ({
   }, [title]);
 
   // Main upload function
-  const handleUpload = async () => {
-    if (!file || !genre || !title || !artist) {
-      setError('Please fill in all fields (file, genre, title, and artist)');
-      return;
-    }
-    
-    if (isUploading) {
-      setError('Upload already in progress. Please wait...');
-      return;
-    }
+  // Update the handleUpload function in Upload.js
+const handleUpload = async () => {
+  if (!file || !genre || !title || !artist) {
+    setError('Please fill in all fields (file, genre, title, and artist)');
+    return;
+  }
+  
+  if (isUploading) {
+    setError('Upload already in progress. Please wait...');
+    return;
+  }
 
-    // Check WebSocket connection before starting upload
-    if (!wsConnected) {
-      setError('WebSocket not connected. Please wait for connection or refresh the page.');
-      return;
-    }
+  // Check WebSocket connection before starting upload
+  if (!wsConnected) {
+    setError('WebSocket not connected. Please wait for connection or refresh the page.');
+    return;
+  }
+  
+  // Store the upload data in a ref so it persists during the upload process
+  uploadDataRef.current = {
+    title: title,
+    artist: artist,
+    genre: genre,
+    fileName: file.name
+  };
+  
+  setError('');
+  setUploadMessage('');
+  setIsUploading(true);
+  setUploadStatus('uploading');
+  setUploadProgress('Processing file...');
+  setUploadPercentage(0);
+
+  console.log('Uploading file:', file);
+  console.log('Upload data stored:', uploadDataRef.current);
+  
+  try {
+    // Step 1: Send to backend for binary processing
+    const formData = new FormData();
+    formData.append('midi_file', file);
+    formData.append('genre', genre);
+    formData.append('title', title);
+    formData.append('artist', artist);
+
+    setUploadProgress('Converting MIDI to binary format...');
+    setUploadPercentage(10);
     
-    // Store the upload data in a ref so it persists during the upload process
-    uploadDataRef.current = {
-      title: title,
-      artist: artist,
-      genre: genre,
-      fileName: file.name
+    // Use the new binary endpoint
+    const response = await backend_api.post('/upload-midi-binary', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      responseType: 'arraybuffer' // Important: get binary data
+    });
+
+    // Extract metadata from response headers
+    const responseHeaders = response.headers;
+    const binaryMetadata = {
+      title: responseHeaders['x-title'] || title,
+      artist: responseHeaders['x-artist'] || artist,
+      genre: responseHeaders['x-genre'] || genre,
+      duration_formatted: responseHeaders['x-duration'] || '00:00',
+      file_size: responseHeaders['x-size'] || '0',
+      event_count: responseHeaders['x-event-count'] || '0'
     };
-    
-    setError('');
-    setUploadMessage('');
-    setIsUploading(true);
-    setUploadStatus('uploading');
-    setUploadProgress('Processing file...');
-    setUploadPercentage(0);
 
-    console.log('Uploading file:', file);
-    console.log('Upload data stored:', uploadDataRef.current);
+    console.log('Binary metadata from headers:', binaryMetadata);
+    setTrackMetadata(binaryMetadata);
+    setUploadPercentage(30);
+
+    // Step 2: Prepare binary data for ESP32 transmission
+    setUploadProgress('Preparing binary data for ESP32...');
+    
+    // Get the binary data as ArrayBuffer
+    const binaryData = response.data;
+    console.log('Binary data size (bytes):', binaryData.byteLength);
+    console.log('Event count:', binaryMetadata.event_count);
+    
+    // Clean the metadata for ESP32 (remove spaces and special characters)
+    const sanitizedTitle = binaryMetadata.title.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+    const sanitizedArtist = binaryMetadata.artist.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+    const sanitizedGenre = binaryMetadata.genre.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+
+    // Create a blob from the binary data
+    const binaryBlob = new Blob([binaryData], { type: 'application/octet-stream' });
+    
+    // Create FormData for ESP32 upload
+    const espData = new FormData();
+    espData.append('data', binaryBlob, 'guitar_events.bin'); // Binary file
+    espData.append('artist', sanitizedArtist);
+    espData.append('title', sanitizedTitle);
+    espData.append('genre', sanitizedGenre);
+    espData.append('duration', binaryMetadata.duration_formatted);
+    espData.append('file_size', binaryMetadata.file_size);
+    espData.append('event_count', binaryMetadata.event_count);
+
+    console.log('ESP32 FormData prepared with binary file:', binaryBlob.size, 'bytes');
+    setUploadPercentage(40);
+
+    // Step 3: Send binary data to ESP32 with progress tracking
+    setUploadProgress('Uploading binary data to ESP32. Watch for real-time progress...');
+    
+    // Set upload timeout
+    if (uploadTimeoutRef.current) {
+      clearTimeout(uploadTimeoutRef.current);
+    }
+    uploadTimeoutRef.current = setTimeout(() => {
+      if (isUploading) {
+        setUploadStatus('failed');
+        setUploadProgress('Upload timed out - no response from ESP32');
+        setError('Upload timed out. Please try again.');
+        setIsUploading(false);
+      }
+    }, 120000); // 2 minutes timeout
     
     try {
-      // Step 1: Send to backend for processing
-      const formData = new FormData();
-      formData.append('midi_file', file);
-      formData.append('genre', genre);
-      formData.append('title', title);
-      formData.append('artist', artist);
-
-      setUploadProgress('Sending to backend for processing...');
-      setUploadPercentage(10);
-      
-      const response = await backend_api.post('/upload-midi', formData, {
+      const espResponse = await esp32.post('/upload-binary', espData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+        timeout: 15000, // 15 second timeout for initial response
       });
-
-      // Process the response
-      if (response.data) {
-        setTrackMetadata({
-          title: response.data.title,
-          artist: response.data.artist,
-          genre: response.data.genre,
-          duration_formatted: response.data.duration_formatted,
-        });
-
-        console.log('Track metadata:', response.data);
-        setUploadPercentage(30);
-
-        // Step 2: Prepare data for ESP32 transmission
-        setUploadProgress('Preparing data for ESP32...');
-        const json = JSON.stringify(response.data);
-        console.log("JSON size (bytes):", new TextEncoder().encode(json).length);
-        
-        // Clean the metadata for ESP32 (remove spaces and special characters)
-        const sanitizedTitle = response.data.title.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
-        const sanitizedArtist = response.data.artist.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
-        const sanitizedGenre = response.data.genre.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
-
-        // Create a simple blob for the file content
-        const jsonBlob = new Blob([json], { type: 'application/json' });
-        
-        // Create FormData exactly as your ESP32 expects it
-        const espData = new FormData();
-        espData.append('data', jsonBlob, 'temp.json'); // File with name 'temp.json'
-        espData.append('artist', sanitizedArtist);     // Form field
-        espData.append('title', sanitizedTitle);       // Form field  
-        espData.append('genre', sanitizedGenre);       // Form field
-
-        setUploadPercentage(40);
-
-        // Step 3: Send to ESP32 - now with WebSocket progress updates
-        setUploadProgress('Uploading to ESP32. Watch for real-time progress...');
-        
-        // Set upload timeout
-        if (uploadTimeoutRef.current) {
-          clearTimeout(uploadTimeoutRef.current);
-        }
-        uploadTimeoutRef.current = setTimeout(() => {
-          if (isUploading) {
-            setUploadStatus('failed');
-            setUploadProgress('Upload timed out - no response from ESP32');
-            setError('Upload timed out. Please try again.');
-            setIsUploading(false);
-          }
-        }, 120000); // 2 minutes timeout
-        
-        try {
-          const espResponse = await esp32.post('/upload', espData, {
-            headers: {
-              'Content-Type': 'multipart/form-data',
-            },
-            timeout: 15000, // 15 second timeout for initial response
-          });
-          
-          console.log('ESP32 response:', espResponse.data);
-          
-          if (espResponse.status === 200) {
-            // Initial upload successful - progress will be tracked via WebSocket
-            setUploadProgress('Upload sent to ESP32. Processing...');
-            setUploadPercentage(50);
-            // Don't set completed here - wait for WebSocket confirmation
-          } else {
-            throw new Error('Unexpected ESP32 response: ' + espResponse.data);
-          }
-          
-        } catch (espError) {
-          console.error('Failed to send MIDI to ESP32:', espError);
-          
-          // Clear upload timeout
-          if (uploadTimeoutRef.current) {
-            clearTimeout(uploadTimeoutRef.current);
-            uploadTimeoutRef.current = null;
-          }
-          
-          if (espError.response && espError.response.status === 501) {
-            setUploadStatus('failed');
-            setUploadProgress('ESP32 upload not implemented');
-            setError('ESP32 upload endpoint returned 501 - Not Implemented. The route may not be properly configured.');
-          } else {
-            setUploadStatus('failed');
-            setUploadProgress('Upload failed');
-            setError('Failed to upload to ESP32: ' + espError.message);
-          }
-          setIsUploading(false);
-          setUploadPercentage(0);
-          return;
-        }
-        
+      
+      console.log('ESP32 binary upload response:', espResponse.data);
+      
+      if (espResponse.status === 200) {
+        // Initial upload successful - progress will be tracked via WebSocket
+        setUploadProgress('Binary data sent to ESP32. Processing...');
+        setUploadPercentage(50);
+        // Don't set completed here - wait for WebSocket confirmation
+      } else {
+        throw new Error('Unexpected ESP32 response: ' + espResponse.data);
       }
-    } catch (error) {
-      console.error('Error in upload process:', error);
-      setError('Upload failed: ' + error.message);
-      setUploadStatus('failed');
-      setUploadProgress('');
-      setUploadPercentage(0);
-      setIsUploading(false);
+      
+    } catch (espError) {
+      console.error('Failed to send binary data to ESP32:', espError);
       
       // Clear upload timeout
       if (uploadTimeoutRef.current) {
         clearTimeout(uploadTimeoutRef.current);
         uploadTimeoutRef.current = null;
       }
+      
+      if (espError.response && espError.response.status === 501) {
+        setUploadStatus('failed');
+        setUploadProgress('ESP32 binary upload not implemented');
+        setError('ESP32 binary upload endpoint returned 501 - Not Implemented. The route may not be properly configured.');
+      } else {
+        setUploadStatus('failed');
+        setUploadProgress('Upload failed');
+        setError('Failed to upload to ESP32: ' + espError.message);
+      }
+      setIsUploading(false);
+      setUploadPercentage(0);
+      return;
     }
-  };
+    
+  } catch (error) {
+    console.error('Error in binary upload process:', error);
+    setError('Upload failed: ' + error.message);
+    setUploadStatus('failed');
+    setUploadProgress('');
+    setUploadPercentage(0);
+    setIsUploading(false);
+    
+    // Clear upload timeout
+    if (uploadTimeoutRef.current) {
+      clearTimeout(uploadTimeoutRef.current);
+      uploadTimeoutRef.current = null;
+    }
+  }
+};
 
   // Handle successful upload completion (called when WebSocket confirms success)
   const handleUploadSuccess = (responseData) => {

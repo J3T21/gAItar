@@ -1,4 +1,5 @@
 import uvicorn
+import struct
 import mido
 import torch
 import pickle
@@ -10,7 +11,7 @@ from mido import MidiFile, MidiTrack, merge_tracks
 from typing import List
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import Response, FileResponse
 from pydantic import BaseModel
 from transformers import T5Tokenizer
 from huggingface_hub import hf_hub_download
@@ -313,3 +314,54 @@ async def convert_audio_to_midi(background_tasks: BackgroundTasks, audio_file: U
         if 'output_filename' in locals() and os.path.exists(output_filename):
             os.unlink(output_filename)
         raise HTTPException(status_code=500, detail=f"Error converting audio to MIDI: {str(e)}")
+
+
+def serialize_guitar_events_micro(events_data):
+    """Ultra-compact binary format optimized for Adafruit Grand Central"""
+    events = events_data["events"]
+    
+    # Header: total_duration_ms (4 bytes) + event_count (2 bytes) = 6 bytes
+    # Fix: Use "duration" instead of "duration_formatted" to match the return from process_midi_to_guitar_from_midi
+    duration_key = "duration_formatted" if "duration_formatted" in events_data else "duration"
+    duration_parts = events_data[duration_key].split(":")
+    total_duration_ms = (int(duration_parts[0]) * 60 + int(duration_parts[1])) * 1000
+    
+    # Pack header: duration (4 bytes) + event count (2 bytes)
+    binary_data = struct.pack('>IH', total_duration_ms, len(events))
+    
+    # Each event: time_ms (4 bytes) + packed_string_fret (1 byte) = 5 bytes per event
+    for event in events:
+        time_ms = event["time"]
+        string = event["string"]  # 1-6
+        fret = 31 if event["fret"] == -1 else event["fret"]  # 0-30 or 31 for fret-off
+        
+        # Pack string (3 bits: 0-7) + fret (5 bits: 0-31)
+        # String 1-6 becomes 0-5 in 3 bits, fret 0-30 or 31 in 5 bits
+        packed_byte = (string << 5) | fret
+        
+        # 5 bytes per event: 4 bytes time + 1 byte string_fret
+        binary_data += struct.pack('>IB', time_ms, packed_byte)
+    
+    return binary_data
+
+@app.post("/upload-midi-binary")
+async def upload_midi_binary(midi_file: UploadFile = File(...), title: str = Form(...), artist: str = Form(...), genre: str = Form(...)):
+    """Upload MIDI file and return binary format optimized for microcontroller"""
+    contents = await midi_file.read()
+    ir = process_midi_to_guitar_from_midi(contents, max_frets=12)
+    
+    binary_data = serialize_guitar_events_micro(ir)
+    
+    return Response(
+        content=binary_data,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f"attachment; filename=guitar_events.bin",
+            "X-Title": title,
+            "X-Artist": artist,
+            "X-Genre": genre,
+            "X-Duration": ir["duration"],
+            "X-Size": str(len(binary_data)),
+            "X-Event-Count": str(len(ir["events"]))
+        }
+    )
