@@ -31,9 +31,6 @@ void fileReceiverTask(void *pvParameters){
     while (true){
         fileReceiverRTOS_char(dataUart);
         vTaskDelay(5 / portTICK_PERIOD_MS);
-        //taskYIELD();
-        // Serial.print("fileTask stack left: ");
-        // Serial.println(uxTaskGetStackHighWaterMark(NULL));
     }
 }
 
@@ -42,9 +39,6 @@ void instructionTask(void *pvParameters) {
     while (true) {
         instructionReceiverRTOS(instructionUart); // Call the instruction receiver function to handle incoming instructions
         vTaskDelay(10 / portTICK_PERIOD_MS); // Delay to prevent task starvation
-        //taskYIELD();
-        // Serial.print("InstrTask stack left: ");
-        // Serial.println(uxTaskGetStackHighWaterMark(NULL));
     }
 }
 
@@ -63,27 +57,12 @@ void playbackTask(void *pvParameters) {
             playGuitarRTOS_Binary(currentSongPath);
             xSemaphoreGive(playbackSemaphore);
         }
-        //Serial.print("PlaybackTask stack left: ");
-        // Serial.println(uxTaskGetStackHighWaterMark(NULL));
         vTaskDelay(2 / portTICK_PERIOD_MS);
     }
 
 }
 
-void testTask(void *pvParameters) {
-    while (1) {
-        Serial.println("Test task alive!");
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-}
 
-// void setup() {
-//     Serial.begin(115200);
-//     unsigned long serialTimeout = millis();
-//     while (!Serial && millis() - serialTimeout < 2000) { ; }
-//     xTaskCreate(testTask, "Test", 1024, NULL, 1, NULL);
-//     vTaskStartScheduler();
-// }
 
 void setup() {
     Serial.begin(115200); // Initialize serial communication or debugging
@@ -157,18 +136,15 @@ void setup() {
     if (result != pdPASS) {
         Serial.println("FileReceiver task failed to create");
     }
-    //xTaskCreate(testTask, "Test", 1024, NULL, 1, NULL);
-    result = xTaskCreate(
-        heapMonitorTask,
-        "Heap Monitor",
-        256,
-        NULL,
-        1, // Lowest priority
-        &heapTaskHandle
-    );   
-    // // if (result != pdPASS){
-    // //     Serial.println("Instr task failed to create");
-    // // }
+    // result = xTaskCreate(
+    //     heapMonitorTask,
+    //     "Heap Monitor",
+    //     256,
+    //     NULL,
+    //     1, // Lowest priority
+    //     &heapTaskHandle
+    // );   
+
     Serial.print("Free heap after file");
     Serial.println(xPortGetFreeHeapSize());
     vTaskStartScheduler();

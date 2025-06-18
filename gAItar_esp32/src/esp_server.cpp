@@ -205,7 +205,7 @@ auto handleRequest = [](const String &label) {
   server.on("/pause", HTTP_POST, handlePauseRequest("Pause"), nullptr, nullptr);
   server.on("/skip", HTTP_POST, handleRequest("Skip"), nullptr, handleBody("Skip"));
   server.on("/shuffle", HTTP_POST, handleRequest("Shuffle"), nullptr, handleBody("Shuffle"));
-  server.on("/upload", HTTP_POST, handleRequest("Upload"),handleFile("Upload"), nullptr);
+  //server.on("/upload", HTTP_POST, handleRequest("Upload"),handleFile("Upload"), nullptr); deprecated
   server.on("/upload-binary", HTTP_POST, handleRequest("Upload-Binary"), handleFile("Upload"), nullptr);
   server.on("/existing-songs", HTTP_GET, handleGet("List"));
   server.begin();

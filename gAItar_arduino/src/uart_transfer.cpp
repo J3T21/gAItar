@@ -1,10 +1,11 @@
-#include "uart.h"
+#include "uart_transfer.h"
 #include "translate.h"
 #include <SPI.h>
 #include <ArduinoJson.h>
 #include "globals.h"
 #include <FreeRTOS_SAMD51.h>
 
+// External global playback state variables
 extern volatile bool isPlaying;
 extern volatile bool isPaused;
 extern volatile bool newSongRequested;
@@ -15,29 +16,39 @@ extern unsigned long pauseOffset;
 extern SemaphoreHandle_t playbackSemaphore;
 extern SemaphoreHandle_t sdSemaphore;
 
+// Command caching variables for resume functionality
 char prevTitle[64] = "";
 char prevArtist[64] = "";
 char prevGenre[64] = "";
 
-
+/**
+ * File search implementation using hierarchical directory structure
+ * Constructs paths in format: /genre/artist/title.bin
+ * Thread-safe with semaphore protection for SD card access
+ * 
+ * @param title Song title for filename construction
+ * @param artist Artist name for directory path
+ * @param genre Genre category for top-level directory
+ * @return Static buffer containing full file path or nullptr if not found
+ */
 const char* findFileSimple(const char* title, const char* artist, const char* genre) {
     static char matchingFilePath[128];
     
-    // Construct the full file path: /genre/artist/title.json
+    // Construct the full file path: /genre/artist/title.bin
     snprintf(matchingFilePath, sizeof(matchingFilePath), "/%s/%s/%s.bin", 
-             genre, artist, title);  // ← Remove .c_str() calls
+             genre, artist, title);
 
-    // Debug output
+    // Debug output for file search tracking
     Serial.print("Checking if file exists: ");
     Serial.println(matchingFilePath);
 
-    // Acquire semaphore before accessing SD
+    // Thread-safe SD card access with semaphore protection
     if (!xSemaphoreTake(sdSemaphore, portMAX_DELAY)) {
         Serial.println("Failed to take SD semaphore");
         return nullptr;
     }
 
-    // Check if the file exists
+    // Check file existence on SD card
     bool fileExists = sd.exists(matchingFilePath);
     
     xSemaphoreGive(sdSemaphore);
@@ -53,7 +64,15 @@ const char* findFileSimple(const char* title, const char* artist, const char* ge
     }
 }
 
-
+/**
+ * Recursive directory traversal for file listing over UART
+ * Transmits file paths and handles nested directory structures
+ * Filters out system directories and hidden files
+ * 
+ * @param dir Directory handle for traversal
+ * @param uart UART interface for file list transmission
+ * @param basePath Current directory path for recursive calls
+ */
 void listFilesRecursiveUart(SdFile& dir, Uart& uart, const char* basePath = "/") {
     SdFile entry;
     char name[64];
@@ -61,14 +80,15 @@ void listFilesRecursiveUart(SdFile& dir, Uart& uart, const char* basePath = "/")
     while (entry.openNext(&dir, O_RDONLY)) {
         entry.getName(name, sizeof(name));
         if (entry.isDir()) {
+            // Skip system and hidden directories
             if (strcmp(name, ".") != 0 && strcmp(name, "..") != 0 && strcmp(name, "System Volume Information") != 0) {
-                // Create local buffer for subdirectory path
+                // Construct subdirectory path for recursive traversal
                 char subDirPath[256];
                 snprintf(subDirPath, sizeof(subDirPath), "%s%s/", basePath, name);
                 listFilesRecursiveUart(entry, uart, subDirPath);
             }
         } else {
-            // Create local buffer for file path
+            // Transmit file information over UART
             char filePath[256];
             snprintf(filePath, sizeof(filePath), "%s%s", basePath, name);
             
@@ -76,6 +96,7 @@ void listFilesRecursiveUart(SdFile& dir, Uart& uart, const char* basePath = "/")
             uart.print("\r\n");
             uart.flush();
             
+            // Mirror output to Serial for debugging
             Serial.print(filePath);
             Serial.print("\r\n");
             Serial.flush();
@@ -84,17 +105,36 @@ void listFilesRecursiveUart(SdFile& dir, Uart& uart, const char* basePath = "/")
     }
 }
 
+/**
+ * UART file listing interface for remote file system browsing
+ * Provides complete directory structure over UART for external systems
+ * 
+ * @param uart UART interface for file list transmission
+ */
 void listFilesOnSDUart(Uart& uart) {
     SdFile root;
     if (!root.open("/")) {
-       // uart.println("Failed to open root directory");
-        return;
+        return; // Silent failure - root directory access failed
     }
     listFilesRecursiveUart(root, uart, "/");
     root.close();
 }
 
+/**
+ * Binary protocol instruction receiver with state machine implementation
+ * Handles three-stage protocol: header detection, length parsing, payload processing
+ * Supports play, pause, and list commands with JSON payload parsing
+ * Thread-safe with semaphore protection for shared resources
+ * 
+ * Protocol format:
+ * - Header: 0xAA (start byte)
+ * - Length: 1 byte payload length
+ * - Payload: Variable length command data
+ * 
+ * @param instrUart UART interface for command reception
+ */
 void instructionReceiverRTOS(Uart &instrUart) {
+    // State machine states for reliable packet parsing
     static enum { WAIT_FOR_HEADER, WAIT_FOR_LENGTH, WAIT_FOR_PAYLOAD } state = WAIT_FOR_HEADER;
     static uint8_t length = 0;
     static uint8_t receivedBytes = 0;
@@ -105,6 +145,7 @@ void instructionReceiverRTOS(Uart &instrUart) {
 
         switch (state) {
             case WAIT_FOR_HEADER:
+                // Look for protocol start byte
                 if (incomingByte == 0xAA) {
                     state = WAIT_FOR_LENGTH;
                     length = 0;
@@ -114,6 +155,7 @@ void instructionReceiverRTOS(Uart &instrUart) {
                 break;
 
             case WAIT_FOR_LENGTH:
+                // Validate payload length
                 if (incomingByte > 0 && incomingByte <= sizeof(buffer)) {
                     length = incomingByte;
                     receivedBytes = 0;
@@ -127,17 +169,17 @@ void instructionReceiverRTOS(Uart &instrUart) {
                 break;
 
             case WAIT_FOR_PAYLOAD:
+                // Accumulate payload bytes
                 buffer[receivedBytes++] = incomingByte;
                 if (receivedBytes == length) {
-                    // Full command received
-                    buffer[length] = '\0'; // Null-terminate the buffer
+                    // Complete command received - process based on command type
+                    buffer[length] = '\0'; // Null-terminate for string operations
                     Serial.print("Received command: ");
                     Serial.println((char*)buffer);
 
-                    // Handle List command (no semaphore needed for SD read-only operations)
+                    // Handle List command (read-only SD operations)
                     if (strncmp((char*)buffer, "List", 4) == 0) {
-                        // List files on SD card
-                        Serial.println("trying to semaphore");
+                        Serial.println("Processing file list request");
                         if (xSemaphoreTake(sdSemaphore, portMAX_DELAY)) {
                             listFilesOnSDUart(instructionUart);
                             xSemaphoreGive(sdSemaphore);
@@ -145,12 +187,13 @@ void instructionReceiverRTOS(Uart &instrUart) {
                             Serial.println("Failed to take sdSemaphore in instructionReceiverRTOS");
                         }
                     }
-                    // Handle Play and Pause commands (need playback semaphore)
+                    // Handle Play and Pause commands (require playback state synchronization)
                     else if (xSemaphoreTake(playbackSemaphore, portMAX_DELAY)) {
                         if (strncmp((char*)buffer, "[Play]", 6) == 0) {
+                            // Extract JSON payload from play command
                             const char* jsonPart = (char*)buffer + 6;
                         
-                            // Parse JSON with StaticJsonDocument for memory safety
+                            // Parse JSON metadata with memory-safe document
                             JsonDocument doc;
                             DeserializationError error = deserializeJson(doc, jsonPart);
                             if (error) {
@@ -163,26 +206,26 @@ void instructionReceiverRTOS(Uart &instrUart) {
                                 return;
                             }
                         
-                            // Extract raw strings from JSON (no String objects yet)
+                            // Extract song metadata from JSON
                             const char* rawTitle = doc["title"];
                             const char* rawArtist = doc["artist"];
                             const char* rawGenre = doc["genre"];
 
+                            // Check if this matches the previously requested song
                             bool isSameSong = (strcmp(rawTitle, prevTitle) == 0 &&
                                                 strcmp(rawArtist, prevArtist) == 0 &&
                                                 strcmp(rawGenre, prevGenre) == 0);
 
-
                             if (isSameSong && isPaused && !newSongRequested) {
-                                // Resume the same paused song
+                                // Resume previously paused song
                                 startTime = millis() - pauseOffset;
                                 isPlaying = true;
                                 isPaused = false;
                                 Serial.println("Resuming previous song (metadata matched)");
                             }
                             else {
-                                // New song (even if same metadata) or different song
-                                // Update cached metadata
+                                // Handle new song request or song change
+                                // Update metadata cache for future resume operations
                                 strncpy(prevTitle, rawTitle, sizeof(prevTitle) - 1);
                                 strncpy(prevArtist, rawArtist, sizeof(prevArtist) - 1);
                                 strncpy(prevGenre, rawGenre, sizeof(prevGenre) - 1);
@@ -190,27 +233,29 @@ void instructionReceiverRTOS(Uart &instrUart) {
                                 prevArtist[sizeof(prevArtist) - 1] = '\0';
                                 prevGenre[sizeof(prevGenre) - 1] = '\0';
 
+                                // Locate song file using metadata
                                 const char* filePath = findFileSimple(prevTitle, prevArtist, prevGenre);
                                 if (filePath) {
                                     Serial.print("Found file: ");
                                     Serial.println(filePath);
 
-                                    // Force new song regardless of current state
+                                    // Initialize new song playback state
                                     strncpy(currentSongPath, filePath, sizeof(currentSongPath) - 1);
                                     currentSongPath[sizeof(currentSongPath) - 1] = '\0';
                                     newSongRequested = true;
                                     isPlaying = true;
                                     isPaused = false;
                                     startTime = millis();
-                                    pauseOffset = 0; // Reset pause offset for new song
+                                    pauseOffset = 0; // Reset pause state for new song
 
                                     Serial.println("Starting new song (interrupting current if any)");
                                 } else {
                                     Serial.println("File not found with matching metadata");
                                 }
                             }
-                            doc.clear();
+                            doc.clear(); // Release JSON document memory
                         } else if (strncmp((char*)buffer, "Pause", 5) == 0) {
+                            // Handle pause command - save current playback position
                             isPaused = true;
                             pauseOffset = millis() - startTime;
                             Serial.println("Paused: isPaused true");
@@ -221,7 +266,7 @@ void instructionReceiverRTOS(Uart &instrUart) {
                         xSemaphoreGive(playbackSemaphore);
                     }
 
-                    // Reset for next message
+                    // Reset state machine for next message
                     state = WAIT_FOR_HEADER;
                 }
                 break;
@@ -229,9 +274,14 @@ void instructionReceiverRTOS(Uart &instrUart) {
     }
 }
 
-
-
-
+/**
+ * Recursive directory traversal for Serial output debugging
+ * Displays complete file system structure with file sizes
+ * Used for local debugging and system verification
+ * 
+ * @param dir Directory handle for traversal
+ * @param path Current directory path string
+ */
 void listFilesRecursive(SdFile& dir, String path = "/") {
     SdFile entry;
     char name[64];
@@ -239,12 +289,13 @@ void listFilesRecursive(SdFile& dir, String path = "/") {
     while (entry.openNext(&dir, O_RDONLY)) {
         entry.getName(name, sizeof(name));
         if (entry.isDir()) {
-            // Skip "." and ".." entries
+            // Skip system directories for clean output
             if (strcmp(name, ".") != 0 && strcmp(name, "..") != 0) {
                 String subDirPath = path + name + "/";
                 listFilesRecursive(entry, subDirPath);
             }
         } else {
+            // Display file information with size
             Serial.print(path);
             Serial.print(name);
             Serial.print(" - ");
@@ -255,6 +306,10 @@ void listFilesRecursive(SdFile& dir, String path = "/") {
     }
 }
 
+/**
+ * Serial output file listing for local debugging
+ * Provides complete directory structure to Serial monitor
+ */
 void listFilesOnSD() {
     SdFile root;
     if (!root.open("/")) {
@@ -266,24 +321,34 @@ void listFilesOnSD() {
     root.close();
 }
 
-
-
+/**
+ * File transfer protocol state enumeration
+ * Defines stages of binary file reception process
+ */
 enum ReceiveState{
-    PARSE_HEADER,
-    OPEN_FILE,
-    PARSE_CHUNK_HEADER,
-    READ_CHUNK,
-    DONE
+    PARSE_HEADER,       // Waiting for transfer initiation
+    OPEN_FILE,          // Creating file and directory structure
+    PARSE_CHUNK_HEADER, // Processing chunk metadata
+    READ_CHUNK,         // Receiving chunk data
+    DONE                // Transfer completion
 };
 
+/**
+ * Thread-safe directory creation with incremental path building
+ * Creates nested directory structure as needed for file storage
+ * Uses static buffers to avoid dynamic memory allocation
+ * 
+ * @param fullPath Complete file path including directory hierarchy
+ * @return true if all directories created successfully, false on failure
+ */
 bool createDirectoriesRTOS_static(const char* fullPath) {
-    // Find the last slash to separate directory from filename
+    // Extract directory path from full file path
     const char* lastSlash = strrchr(fullPath, '/');
     if (!lastSlash || lastSlash == fullPath) {
         return true;  // No directories to create
     }
 
-    // Copy directory path to a static buffer
+    // Copy directory path to static buffer for processing
     static char dirPath[128];
     size_t dirLen = lastSlash - fullPath;
     if (dirLen >= sizeof(dirPath)) {
@@ -294,29 +359,29 @@ bool createDirectoriesRTOS_static(const char* fullPath) {
     strncpy(dirPath, fullPath, dirLen);
     dirPath[dirLen] = '\0';
 
-    // Build path incrementally
+    // Build directory path incrementally
     char tempPath[128] = "";
     char* token;
     char* dirPathCopy = dirPath;
     
-    // Skip leading slash
+    // Handle root directory prefix
     if (dirPathCopy[0] == '/') {
         dirPathCopy++;
         strcpy(tempPath, "/");
     }
 
-    // Parse directory components separated by '/'
+    // Process each directory component
     char* saveptr;
     token = strtok_r(dirPathCopy, "/", &saveptr);
     
     while (token != NULL) {
-        // Build the incremental path
-        if (strlen(tempPath) > 1) {  // Don't add slash after root "/"
+        // Build incremental path for each directory level
+        if (strlen(tempPath) > 1) {  // Avoid double slash after root
             strcat(tempPath, "/");
         }
         strcat(tempPath, token);
 
-        // Check if this path component exists, create if not
+        // Create directory if it doesn't exist
         if (xSemaphoreTake(sdSemaphore, portMAX_DELAY)) {
             if (!sd.exists(tempPath)) {
                 if (!sd.mkdir(tempPath)) {
@@ -338,7 +403,21 @@ bool createDirectoriesRTOS_static(const char* fullPath) {
     return true;
 }
 
+/**
+ * Binary file receiver with chunked protocol implementation
+ * Implements reliable file transfer with acknowledgment and retry mechanisms
+ * Handles large files through chunked transmission with timeout protection
+ * 
+ * Protocol stages:
+ * 1. Header parsing: START:<filepath>:<size>
+ * 2. File creation with directory structure
+ * 3. Chunk reception: CHUNK:<id>:<size> followed by binary data
+ * 4. Completion with file closure and cleanup
+ * 
+ * @param fileUart UART interface for file data reception
+ */
 void fileReceiverRTOS_char(Uart &fileUart){
+    // State machine variables for transfer management
     static ReceiveState state = PARSE_HEADER;
     static size_t fileSize = 0;
     static char filePath[128] = "";
@@ -348,40 +427,40 @@ void fileReceiverRTOS_char(Uart &fileUart){
     static size_t receivedBytes = 0;
     static File file;
     static unsigned long lastByteTime = 0;
-    static const unsigned long TIMEOUT = 5000;
-    static int retryCount = 0;
-    static const int MAX_RETRIES = 3;
+    static const unsigned long TIMEOUT = 5000; // 5 second timeout
     
-    // ← CRITICAL FIX: Move bytesAccumulated to function scope
+    // Chunk accumulation counter (function scope for proper state management)
     static size_t bytesAccumulated = 0;
 
-    // Helper function to reset state
+    // State reset helper function for error recovery
     auto resetState = [&]() {
+        // Clean up file handle with thread safety
         if (xSemaphoreTake(sdSemaphore, portMAX_DELAY)) {
             if (file) {
                 file.close();
             }
             xSemaphoreGive(sdSemaphore);
         }
+        // Clear UART buffer of any remaining data
         while (fileUart.available()) {
             fileUart.read();
         }
+        // Reset all state variables
         receivedBytes = 0;
         fileSize = 0;
         chunkId = 0;
         filePath[0] = '\0';
         chunkSize = 0;
-        retryCount = 0;
-        bytesAccumulated = 0;  // ← CRITICAL: Reset in resetState
+        bytesAccumulated = 0;
         state = PARSE_HEADER;
     };
 
-    // Enhanced timeout handling
+    // Timeout protection for stalled transfers
     if (state != PARSE_HEADER && millis() - lastByteTime > TIMEOUT) {
         Serial.println("Transfer timeout");
         fileUart.println("ERROR:TIMEOUT");
         while (fileUart.available()) {
-            fileUart.read();
+            fileUart.read(); // Clear buffer
         }
         resetState();
         return;
@@ -389,6 +468,7 @@ void fileReceiverRTOS_char(Uart &fileUart){
 
     switch (state){
         case PARSE_HEADER:
+            // Parse transfer initiation header
             if (fileUart.available()){
                 char headerBuffer[256];
                 int headerLen = fileUart.readBytesUntil('\n', headerBuffer, sizeof(headerBuffer) - 1);
@@ -396,7 +476,7 @@ void fileReceiverRTOS_char(Uart &fileUart){
                 
                 headerBuffer[headerLen] = '\0';
                 
-                // Remove trailing whitespace manually
+                // Clean up trailing whitespace
                 while (headerLen > 0 && (headerBuffer[headerLen-1] == '\r' || headerBuffer[headerLen-1] == ' ')) {
                     headerBuffer[--headerLen] = '\0';
                 }
@@ -404,28 +484,27 @@ void fileReceiverRTOS_char(Uart &fileUart){
                 lastByteTime = millis();
                 
                 if (strncmp(headerBuffer, "START:", 6) == 0){
-                    // Parse: START:<filepath>:<size>
+                    // Parse START:<filepath>:<size> format
                     char* firstColon = strchr(headerBuffer + 6, ':');
                     char* secondColon = firstColon ? strchr(firstColon + 1, ':') : nullptr;
                     
                     if (firstColon && secondColon){
-                        // Extract file path
+                        // Extract file path component
                         size_t pathLen = firstColon - (headerBuffer + 6);
                         if (pathLen < sizeof(filePath)) {
                             strncpy(filePath, headerBuffer + 6, pathLen);
                             filePath[pathLen] = '\0';
                         }
                         
-                        // Extract file size
+                        // Extract and validate file size
                         fileSize = strtoul(secondColon + 1, NULL, 10);
                         
-                        if (fileSize > 0 && fileSize < 10485760) {
+                        if (fileSize > 0 && fileSize < 10485760) { // 10MB limit
                             Serial.printf("Transfer start: %s (%u bytes)\n", filePath, fileSize);
                             fileUart.printf("ACK:START:SIZE:%u\n", fileSize);
                             receivedBytes = 0;
                             chunkId = 0;
-                            retryCount = 0;
-                            bytesAccumulated = 0;  // ← CRITICAL: Reset when starting new transfer
+                            bytesAccumulated = 0;
                             state = OPEN_FILE;
                         } else {
                             fileUart.println("ERROR:INVALID_SIZE");
@@ -438,6 +517,7 @@ void fileReceiverRTOS_char(Uart &fileUart){
             break;
 
         case OPEN_FILE:
+            // Create directory structure and open file for writing
             if (!createDirectoriesRTOS_static(filePath)){
                 resetState();
                 return;
@@ -459,6 +539,7 @@ void fileReceiverRTOS_char(Uart &fileUart){
             break;
 
         case PARSE_CHUNK_HEADER:
+            // Parse chunk metadata: CHUNK:<id>:<size>
             if (fileUart.available()){
                 lastByteTime = millis();
                 
@@ -468,19 +549,19 @@ void fileReceiverRTOS_char(Uart &fileUart){
                 
                 chunkHeaderBuffer[chunkHeaderLen] = '\0';
                 
-                // Remove trailing whitespace
+                // Clean up trailing whitespace
                 while (chunkHeaderLen > 0 && (chunkHeaderBuffer[chunkHeaderLen-1] == '\r' || chunkHeaderBuffer[chunkHeaderLen-1] == ' ')) {
                     chunkHeaderBuffer[--chunkHeaderLen] = '\0';
                 }
                 
-                // Check for header retransmission
+                // Handle header retransmission (restart scenario)
                 if (strncmp(chunkHeaderBuffer, "START:", 6) == 0) {
                     state = PARSE_HEADER;
                     break;
                 }
                 
                 if (strncmp(chunkHeaderBuffer, "CHUNK:", 6) == 0){
-                    // Parse: CHUNK:<id>:<size>
+                    // Parse CHUNK:<id>:<size> format
                     char* firstColon = strchr(chunkHeaderBuffer + 6, ':');
                     char* secondColon = firstColon ? strchr(firstColon + 1, ':') : nullptr;
                     
@@ -489,11 +570,12 @@ void fileReceiverRTOS_char(Uart &fileUart){
                         chunkSize = strtoul(secondColon + 1, NULL, 10);
                         
                         if (receivedId == chunkId && chunkSize > 0 && chunkSize <= 128){
+                            // Expected chunk received
                             fileUart.printf("ACK:CHUNK:%u\n", chunkId);
-                            bytesAccumulated = 0;  // ← CRITICAL: Reset for new chunk
+                            bytesAccumulated = 0;
                             state = READ_CHUNK;
-                            retryCount = 0;
                         } else if (receivedId < chunkId) {
+                            // Duplicate chunk - acknowledge previous
                             fileUart.printf("ACK:CHUNK:%u\n", receivedId);
                         } 
                     }
@@ -502,37 +584,38 @@ void fileReceiverRTOS_char(Uart &fileUart){
             break;
 
         case READ_CHUNK:
-            // ← CRITICAL FIX: No more static variable in case block
+            // Receive chunk data bytes
             while (fileUart.available() && bytesAccumulated < chunkSize){
                 buffer[bytesAccumulated++] = fileUart.read();
                 lastByteTime = millis();
             }
             
             if (bytesAccumulated >= chunkSize){
+                // Complete chunk received - write to file
                 bool writeSuccess = false;
                 
                 if (xSemaphoreTake(sdSemaphore, portMAX_DELAY)){
                     size_t written = file.write(buffer, chunkSize);
-                    file.flush();
+                    file.flush(); // Ensure data is written to SD card
                     xSemaphoreGive(sdSemaphore);
                     
                     writeSuccess = (written == chunkSize);
                 }
                 
                 if (writeSuccess) {
+                    // Successful write - acknowledge and advance
                     fileUart.printf("ACK:CHUNK:%u\n", chunkId);
                     chunkId++;
-                    bytesAccumulated = 0;  // ← Reset for next chunk
-                    retryCount = 0;
+                    bytesAccumulated = 0;
                     receivedBytes += chunkSize;
                     
                     if (receivedBytes >= fileSize){
-                        state = DONE;
+                        state = DONE; // Transfer complete
                     } else {
-                        state = PARSE_CHUNK_HEADER;
+                        state = PARSE_CHUNK_HEADER; // Continue with next chunk
                     }
                 } else {
-                    // ← CRITICAL: Reset on write failure
+                    // Write failure - reset and report error
                     bytesAccumulated = 0;
                     fileUart.println("ERROR:WRITE_FAILED");
                     resetState();
@@ -541,6 +624,7 @@ void fileReceiverRTOS_char(Uart &fileUart){
             break;
 
         case DONE:
+            // Transfer completion - cleanup and reset
             if (xSemaphoreTake(sdSemaphore, portMAX_DELAY)){
                 if (file) file.close();
                 xSemaphoreGive(sdSemaphore);

@@ -71,7 +71,7 @@ const App = () => {
             return null;
           }
           
-          const titleRaw = titleWithExtension.replace('.json', '')
+          const titleRaw = titleWithExtension.replace('.bin', '')
 
           const unsanitize = (str) => {
             return str.replace(/_/g, ' ')
