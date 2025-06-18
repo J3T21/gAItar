@@ -24,7 +24,7 @@ const char* findFileSimple(const char* title, const char* artist, const char* ge
     static char matchingFilePath[128];
     
     // Construct the full file path: /genre/artist/title.json
-    snprintf(matchingFilePath, sizeof(matchingFilePath), "/%s/%s/%s.json", 
+    snprintf(matchingFilePath, sizeof(matchingFilePath), "/%s/%s/%s.bin", 
              genre, artist, title);  // ← Remove .c_str() calls
 
     // Debug output
@@ -137,6 +137,7 @@ void instructionReceiverRTOS(Uart &instrUart) {
                     // Handle List command (no semaphore needed for SD read-only operations)
                     if (strncmp((char*)buffer, "List", 4) == 0) {
                         // List files on SD card
+                        Serial.println("trying to semaphore");
                         if (xSemaphoreTake(sdSemaphore, portMAX_DELAY)) {
                             listFilesOnSDUart(instructionUart);
                             xSemaphoreGive(sdSemaphore);
@@ -174,7 +175,7 @@ void instructionReceiverRTOS(Uart &instrUart) {
 
                             if (isSameSong && isPaused && !newSongRequested) {
                                 // Resume the same paused song
-                                resumePlaybackAtCurrentEvent();  // ← Use the new function
+                                startTime = millis() - pauseOffset;
                                 isPlaying = true;
                                 isPaused = false;
                                 Serial.println("Resuming previous song (metadata matched)");

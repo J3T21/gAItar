@@ -60,7 +60,7 @@ void playbackTask(void *pvParameters) {
     Serial.println("Playback task started");
     for (;;){
         if(xSemaphoreTake(playbackSemaphore, portMAX_DELAY)){
-            playGuitarRTOS_safe(currentSongPath);
+            playGuitarRTOS_Binary(currentSongPath);
             xSemaphoreGive(playbackSemaphore);
         }
         //Serial.print("PlaybackTask stack left: ");

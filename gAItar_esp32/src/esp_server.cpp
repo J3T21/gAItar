@@ -73,6 +73,10 @@ void setupTestServer(AsyncWebServer& server) {
     }
   });
 
+
+
+
+
 auto handleRequest = [](const String &label) {
     return [label](AsyncWebServerRequest *request) {
         Serial.println(label);
@@ -91,7 +95,7 @@ auto handleRequest = [](const String &label) {
             Serial.printf("Genre: %s\n", genre.c_str());
         }
         
-        filePath = "/" + genre + "/" + artist + "/" + title + ".json";
+        filePath = "/" + genre + "/" + artist + "/" + title + ".bin";
         
         AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", label + " command received");
         request->send(response);
@@ -167,7 +171,6 @@ auto handleRequest = [](const String &label) {
           request->_tempFile.close();  // Close the file after upload
           Serial.printf("Upload complete: %s\n", filename.c_str());
           sendFile = true;
-          //filePath = "/" + filename;  // Set the file path to be sent
       }
   };
   };
@@ -203,6 +206,7 @@ auto handleRequest = [](const String &label) {
   server.on("/skip", HTTP_POST, handleRequest("Skip"), nullptr, handleBody("Skip"));
   server.on("/shuffle", HTTP_POST, handleRequest("Shuffle"), nullptr, handleBody("Shuffle"));
   server.on("/upload", HTTP_POST, handleRequest("Upload"),handleFile("Upload"), nullptr);
+  server.on("/upload-binary", HTTP_POST, handleRequest("Upload-Binary"), handleFile("Upload"), nullptr);
   server.on("/existing-songs", HTTP_GET, handleGet("List"));
   server.begin();
 }

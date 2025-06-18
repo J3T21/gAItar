@@ -662,3 +662,221 @@ void playGuitarRTOS_safe(const char* filePath) {
         Serial.println("Playback finished - memory cleaned");
     }
 }
+
+void playGuitarRTOS_Binary(const char* filePath) {
+    static File file;
+    static bool fileLoaded = false;
+    static unsigned long lastStatus = 0;
+    static bool fretsCleared = false;
+    
+    // ✅ FIX: Make these static so they persist between function calls
+    static unsigned long totalDurationMs = 0;
+    static uint16_t eventCount = 0;
+    static unsigned long currentEventTime = 0;
+    static uint8_t currentString = 0;
+    static int8_t currentFret = 0;
+    static bool eventReady = false;
+    
+    // ✅ Access global variables for resume support
+    extern size_t currentEventIndex;
+    extern unsigned long startTime;
+    extern unsigned long pauseOffset;
+    extern volatile bool newSongRequested;
+    
+    bool shouldSendStatus = false;
+    if (millis() - lastStatus > 1000) {
+        shouldSendStatus = true;
+        lastStatus = millis();
+    }
+
+    if (!isPlaying || isPaused) {
+        if (shouldSendStatus) {
+            sendPlaybackStatusSafe(instructionUart, totalDurationMs);
+        }
+
+        if (!fretsCleared) {
+            clearAllFrets();
+            fretsCleared = true;
+        }
+        return;
+    } else {
+        fretsCleared = false;
+    }
+
+    // Load binary file header and prepare for event streaming
+    if (!fileLoaded || newSongRequested) {
+        if (xSemaphoreTake(sdSemaphore, portMAX_DELAY)) {
+            // ✅ FIX: Always close existing file first to prevent handle leaks
+            if (file) {
+                file.close();
+            }
+            
+            // ✅ FIX: Reset static variables when switching songs
+            if (newSongRequested) {
+                totalDurationMs = 0;
+                eventCount = 0;
+                currentEventTime = 0;
+                currentString = 0;
+                currentFret = 0;
+                eventReady = false;
+            }
+            
+            file = sd.open(currentSongPath, FILE_READ);
+            if (!file) {
+                xSemaphoreGive(sdSemaphore);
+                Serial.println("Failed to open binary file for reading");
+                isPlaying = false;
+                fileLoaded = false;
+                return;
+            }
+            
+            // Check minimum file size (6 byte header)
+            size_t fileSize = file.size();
+            if (fileSize < 6) {
+                Serial.println("ERROR: Binary file too small");
+                file.close();
+                xSemaphoreGive(sdSemaphore);
+                isPlaying = false;
+                fileLoaded = false;
+                currentSongPath[0] = '\0';
+                instructionUart.println("ERROR:Invalid binary file");
+                return;
+            }
+
+            // Read 6-byte header: duration (4 bytes) + event count (2 bytes)
+            uint8_t header[6];
+            if (file.read(header, 6) != 6) {
+                Serial.println("ERROR: Failed to read binary header");
+                file.close();
+                xSemaphoreGive(sdSemaphore);
+                isPlaying = false;
+                fileLoaded = false;
+                return;
+            }
+
+            // Parse header (big-endian format)
+            totalDurationMs = (header[0] << 24) | (header[1] << 16) | (header[2] << 8) | header[3];
+            eventCount = (header[4] << 8) | header[5];
+            
+            Serial.printf("Binary file loaded: %u events, duration: %lu ms\n", eventCount, totalDurationMs);
+            
+            // Validate file size matches expected event count
+            size_t expectedSize = 6 + (eventCount * 5); // 6 byte header + 5 bytes per event
+            if (fileSize != expectedSize) {
+                Serial.printf("ERROR: File size mismatch. Expected: %u, Actual: %u\n", expectedSize, fileSize);
+                file.close();
+                xSemaphoreGive(sdSemaphore);
+                isPlaying = false;
+                fileLoaded = false;
+                return;
+            }
+
+            fileLoaded = true;
+            
+            // ✅ FIX: Proper timing logic for new songs vs resume
+            if (newSongRequested) {
+                currentEventIndex = 0;  // Reset global index for new song
+                startTime = millis();
+                pauseOffset = 0;
+                newSongRequested = false;
+            } else {
+                // Resuming from pause
+                startTime = millis() - pauseOffset;
+            }
+            
+            xSemaphoreGive(sdSemaphore);
+        } else {
+            Serial.println("Failed to take SD semaphore");
+            return;
+        }
+    }
+
+    // Send status updates
+    if (shouldSendStatus && fileLoaded) {
+        sendPlaybackStatusSafe(instructionUart, totalDurationMs);
+    }
+
+    // ✅ FIX: Bounds checking with current song's event count
+    if (!eventReady && currentEventIndex < eventCount && fileLoaded) {
+        if (xSemaphoreTake(sdSemaphore, portMAX_DELAY)) {
+            // Calculate file position for current event
+            size_t eventPosition = 6 + (currentEventIndex * 5); // 6 byte header + 5 bytes per event
+            
+            if (file && file.seek(eventPosition)) {
+                uint8_t eventData[5];
+                if (file.read(eventData, 5) == 5) {
+                    // Parse 5-byte event: time_ms (4 bytes) + packed_string_fret (1 byte)
+                    currentEventTime = (eventData[0] << 24) | (eventData[1] << 16) | (eventData[2] << 8) | eventData[3];
+                    uint8_t packedByte = eventData[4];
+                    
+                    // Unpack: string (3 bits) + fret (5 bits)
+                    currentString = (packedByte >> 5) & 0x07; // Extract upper 3 bits for string (1-6)
+                    uint8_t fretValue = packedByte & 0x1F;     // Extract lower 5 bits for fret (0-31)
+                    
+                    // Convert fret: 31 means fret-off (-1), otherwise 0-30
+                    currentFret = (fretValue == 31) ? -1 : (int8_t)fretValue;
+                    
+                    eventReady = true;
+                } else {
+                    Serial.println("ERROR: Failed to read event data");
+                    isPlaying = false;
+                    fileLoaded = false;
+                }
+            } else {
+                Serial.println("ERROR: Failed to seek to event position or invalid file");
+                isPlaying = false;
+                fileLoaded = false;
+            }
+            
+            xSemaphoreGive(sdSemaphore);
+        } else {
+            Serial.println("Failed to take SD semaphore for event reading");
+            return;
+        }
+    }
+
+    // Play the current event if it's time
+    if (eventReady && (millis() - startTime >= currentEventTime)) {
+        // Validate string range
+        if (currentString >= 1 && currentString <= 6) {
+            bool moveServo = false;
+            if (currentFret > 0) {
+                moveServo = true;
+            }
+            
+            // Process the guitar event using existing function
+            processGuitarEvent(currentString, currentFret, moveServo);
+        } else {
+            Serial.printf("ERROR: Invalid string number: %u\n", currentString);
+        }
+        
+        // Move to next event
+        currentEventIndex++;
+        eventReady = false;
+    }
+
+    // Check if song is finished
+    if (currentEventIndex >= eventCount && fileLoaded) {
+        // Song finished
+        if (shouldSendStatus) {
+            sendPlaybackStatusSafe(instructionUart, totalDurationMs);
+        }
+        
+        // ✅ FIX: Proper cleanup
+        if (xSemaphoreTake(sdSemaphore, portMAX_DELAY)) {
+            if (file) {
+                file.close();
+            }
+            xSemaphoreGive(sdSemaphore);
+        }
+        
+        // Reset all state
+        currentSongPath[0] = '\0';
+        isPlaying = false;
+        fileLoaded = false;
+        newSongRequested = true;
+        currentEventIndex = 0;
+        
+        Serial.println("Binary playback finished");
+    }
+}
