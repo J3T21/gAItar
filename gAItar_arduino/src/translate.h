@@ -1,45 +1,42 @@
 #ifndef TRANSLATE_H
 #define TRANSLATE_H
+
 #include <Arduino.h>
-#include <ArduinoJson.h>
 #include "globals.h"
 #include "servo_toggle.h"
-#include "pwm_shift_solenoid.h"
 #include "shift_solenoid.h"
-struct Event {
-    unsigned long time;
-    int string;
-    int fret;
-};
 
+/**
+ * Binary guitar playback system function declarations
+ * Handles real-time binary file parsing and hardware control for automated guitar playing
+ */
 
-void playGuitarEvents();  // Function declaration
-
-void playGuitarEventsOpen();  // Function declaration
-
-void playGuitarFromFile(const char* filePath);
-
-void playGuitarRTOS(const char* filePath);
-void playGuitarRTOS_Hammer(const char* filePath);
-
-void playFrets();
-void sendPlaybackStatus(Uart &instrUart, JsonArray *eventsPtr = nullptr);
-// Add these declarations to translate.h
+/**
+ * Sends playback status information over UART interface
+ * Used for synchronizing external control systems with current playback state
+ * 
+ * @param instrUart UART interface for status transmission
+ * @param totalTime Total song duration in milliseconds
+ */
 void sendPlaybackStatusSafe(Uart &instrUart, unsigned long totalTime);
-void playGuitarRTOS_safe(const char* filePath); 
-void resumePlaybackAtCurrentEvent();
+
+/**
+ * Main binary guitar playback engine
+ * Streams binary song data and controls servo motors and solenoid fret actuators
+ * Designed for real-time operation with minimal memory allocation
+ * 
+ * @param filePath Path to binary song file on SD card storage
+ */
 void playGuitarRTOS_Binary(const char* filePath);
 
-// If needed elsewhere, also expose time and note state:
-extern unsigned long currentTime;
-extern unsigned long lastUpdateTime;
-
-struct NoteState {
-    bool isActive;
-    unsigned long sustainEndTime;
-};
-
-extern NoteState noteStates[6];
-extern byte lh_state[NUM_FRETS];  // State of each fret's shift register
+/**
+ * Low-level hardware control function for individual guitar events
+ * Processes single note events and translates to servo and solenoid actions
+ * 
+ * @param string Guitar string number (1-6, where 1 = High E, 6 = Low E)
+ * @param fret Fret number (0 = open string, -1 = string off, 1-12 = fretted notes)
+ * @param moveServo Flag indicating whether servo actuation is required
+ */
+void processGuitarEvent(int string, int fret, bool moveServo);
 
 #endif // TRANSLATE_H
