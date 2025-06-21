@@ -25,7 +25,7 @@ const PlaybackInfo = ({ currentTrack }) => {
         }
 
         console.log('PlaybackInfo: Connecting to WebSocket...');
-        wsRef.current = new WebSocket('ws://10.245.188.200/ws');
+        wsRef.current = new WebSocket('ws://192.168.113.200/ws');
         
         wsRef.current.onopen = () => {
           console.log('PlaybackInfo: WebSocket connected');
