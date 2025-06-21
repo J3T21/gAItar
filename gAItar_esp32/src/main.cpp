@@ -11,11 +11,12 @@
 const char* ssid = "PixelJ";  // Your WiFi SSID
 const char* password = "12345678";    // Your WiFi password
 
-IPAddress local_IP(10, 245, 188, 46);      // Choose an IP in your network range
-IPAddress gateway(10, 245, 188, 229);       // Your actual gateway
-IPAddress subnet(255, 255, 255, 0);         // Your actual subnet mask
-IPAddress primaryDNS(10, 245, 188, 229);    // Use your gateway as DNS
-IPAddress secondaryDNS(8, 8, 8, 8);   
+// Updated to match your computer's network
+IPAddress local_IP(192, 168, 113, 200);      // Static IP you want
+IPAddress gateway(192, 168, 113, 82);        // Your actual gateway
+IPAddress subnet(255, 255, 255, 0);          // Your actual subnet mask
+IPAddress primaryDNS(192, 168, 113, 82);     // Use your gateway as DNS
+IPAddress secondaryDNS(8, 8, 8, 8);          // Google DNS as backup
 
 static AsyncWebServer server(80);
 
@@ -29,17 +30,11 @@ void setup() {
   
   WiFi.mode(WIFI_STA);  // Set WiFi to station mode
   
-  // Try a static IP outside the DHCP range
-  IPAddress local_IP(10, 245, 188, 200);      // Higher number, likely outside DHCP range
-  IPAddress gateway(10, 245, 188, 229);       // Your actual gateway
-  IPAddress subnet(255, 255, 255, 0);         // Your actual subnet mask
-  IPAddress primaryDNS(10, 245, 188, 229);    // Use your gateway as DNS
-  IPAddress secondaryDNS(8, 8, 8, 8);         // Google DNS as backup
-  
+  // Configure static IP with correct network settings
   if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
     Serial.println("STA Failed to configure static IP");
   } else {
-    Serial.println("Static IP configured: 10.245.188.200");
+    Serial.printf("Static IP configured: %s\n", local_IP.toString().c_str());
   }
   
   WiFi.begin(ssid, password);
@@ -54,6 +49,10 @@ void setup() {
   Serial.println("WiFi connected!");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
+  Serial.print("Gateway: ");
+  Serial.println(WiFi.gatewayIP());
+  Serial.print("Subnet: ");
+  Serial.println(WiFi.subnetMask());
   
   // Verify static IP worked
   if (WiFi.localIP() == local_IP) {
@@ -63,13 +62,14 @@ void setup() {
   }
   
   setupTestServer(server);
+  Serial.printf("HTTP server started on: http://%s\n", WiFi.localIP().toString().c_str());
+  
   setupUARTs();
   listSPIFFSFiles();
   Serial.println("Clearing files...");
   formatSPIFFS();
   listSPIFFSFiles();
 }
-
 
 void loop() {
     uploadToSAMD_state(sendFile, filePath);
