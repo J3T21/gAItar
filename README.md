@@ -29,14 +29,14 @@ Welcome to gAItar! This guide will help you understand how to set up and use the
     *   The UI will be accessible at `http://localhost:3000`.
 4.  **Important:** Verify and update the API base URLs in `UI/gaitar_ui/src/api.js`:
     *   `backend_api`: Should point to your backend API (e.g., `http://localhost:8000`).
-    *   `esp32`: Should point to your ESP32's IP address (e.g., `http://10.245.188.200`).
+    *   `esp32`: Should point to your ESP32's IP address (e.g., `http://192.168.113.200`).
 
 ##### ESP32 Firmware (`gAItar_esp32`)
 1.  Open the `gAItar_esp32` project folder in VS Code with PlatformIO extension.
 2.  In `gAItar_esp32/src/main.cpp`:
     *   Update the `ssid` and `password` variables with your Wi-Fi network credentials. The current configuration is set for an Android mobile hotspot. Ensure this network is the same one your computer (running the UI and backend) is connected to.
-    *   The ESP32 attempts to configure a static IP address (e.g., `10.245.188.200` as seen in the code). The actual IP address will be displayed in the Serial Monitor upon successful connection. Ensure this IP matches the `baseURL` for `esp32` in `UI/gaitar_ui/src/api.js`.
-3.  Build and upload the firmware to the ESP32 board using PlatformIO.
+    *   The ESP32 attempts to configure a static IP address (e.g., `192.168.113.200` as seen in the code). The actual IP address will be displayed in the Serial Monitor upon successful connection. Ensure this IP matches the `baseURL` for `esp32` in `UI/gaitar_ui/src/api.js`. Also change this to match the websockets in the `upload.js` and `playbackinfo.js` components (this caused me much pain in the past).
+    *   3.  Build and upload the firmware to the ESP32 board using PlatformIO.
 
 ##### Adafruit Grand Central Firmware (`gAItar_arduino`)
 1.  Open the `gAItar_arduino` project folder in VS Code with PlatformIO extension.
